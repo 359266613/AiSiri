@@ -23,7 +23,7 @@ static void AxsAiSiriCheck(BOOL condition, NSString *message) {
     }
 }
 
-// No preferences, files, audio, network, hooks or system Siri are used by this test.
+// No preferences, files, audio, network or system Siri; only fixture methods are replaced.
 @implementation AxsAiSiriConfig
 + (NSDictionary *)defaults {
     return @{@"enabled": @YES, @"speakReply": @NO, @"prefix": @"\u95eeAI", @"reply": @"Local probe."};
@@ -74,12 +74,14 @@ NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 - (void)siriSession:(id)session command:(id)command context:(id)context completion:(id)completion;
 - (void)siriSession:(id)session command:(id)command time:(double)time;
 - (id)commandResult:(id)command;
+- (void)siriSessionDidReceiveAddViewsCommand:(id)command completion:(id)completion;
 @end
 
 @interface AxsAiSiriTestDelegate : NSObject <AFUISiriSessionDelegate>
 @property NSUInteger calls;
 @property (strong) id lastCommand;
 @property (strong) id lastCompletion;
+@property (strong) NSMutableArray *delivered;
 @end
 @implementation AxsAiSiriTestDelegate
 - (void)commandOnly:(id)command { self.calls++; self.lastCommand = command; }
@@ -96,6 +98,13 @@ NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 - (void)siriSession:(id)session command:(id)command time:(double)time { self.calls++; }
 - (id)commandResult:(id)command { return command; }
 - (void)undeclaredCommand:(id)command { self.calls++; }
+- (void)siriSessionDidReceiveAddViewsCommand:(id)command completion:(id)completion {
+    AxsAiSiriCheck(NSThread.isMainThread, @"delegate delivery on main");
+    if (!self.delivered) self.delivered = [NSMutableArray array];
+    [self.delivered addObject:command];
+    self.lastCompletion = completion;
+    if (completion) ((void (^)(id))completion)(nil);
+}
 @end
 
 @interface AxsAiSiriTestChildDelegate : AxsAiSiriTestDelegate
@@ -150,6 +159,7 @@ static AxsAiSiriTestACENode *AxsAiSiriACEResult(NSArray *phrases) {
 
 @interface AFUISiriSession ()
 @property (strong) NSMutableArray *axsAiSiriSubmitted;
+@property (strong) id axsAiSiriDelegate;
 @end
 @implementation AFUISiriSession
 - (instancetype)init {
@@ -166,7 +176,7 @@ static AxsAiSiriTestACENode *AxsAiSiriACEResult(NSArray *phrases) {
 - (void)assistantConnectionDismissAssistant:(id)connection { [self end]; }
 - (void)end { [[AxsAiSiriProbeManager shared] endSession:self]; }
 - (void)endForReason:(long long)reason { [self end]; }
-- (id)delegate { return nil; }
+- (id)delegate { return self.axsAiSiriDelegate; }
 - (id)localDelegate { return nil; }
 - (void)_performBlockWithDelegate:(id)block {}
 - (void)assistantConnection:(id)connection receivedCommand:(id)command completion:(id)completion {
@@ -496,7 +506,7 @@ static void AxsAiSiriTestDelegateRoutes(void) {
     IMP undeclared = class_getMethodImplementation(delegate.class, @selector(undeclaredCommand:));
     AxsAiSiriPrepareDelegateProbe(delegate, @"delegate", AxsAiSiriTestInstall);
     AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"delegate-inventory"); }, @"delegate inventory recorded");
-    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 4, @"hook only declared void object signatures of arities 1-4");
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 5, @"hook only declared void object signatures of arities 1-4");
     AxsAiSiriCheck(scalar == class_getMethodImplementation(delegate.class, @selector(siriSession:command:time:)),
         @"scalar signature is not replaced");
     AxsAiSiriCheck(result == class_getMethodImplementation(delegate.class, @selector(commandResult:)),
@@ -504,7 +514,7 @@ static void AxsAiSiriTestDelegateRoutes(void) {
     AxsAiSiriCheck(undeclared == class_getMethodImplementation(delegate.class, @selector(undeclaredCommand:)),
         @"undeclared candidate is not replaced");
     AxsAiSiriPrepareDelegateProbe(delegate, @"delegate", AxsAiSiriTestInstall);
-    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 4, @"delegate methods installed only once");
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 5, @"delegate methods installed only once");
     SAUIAddViews *command = [SAUIAddViews addViews];
     __block NSUInteger completions = 0;
     id completion = [^{ completions++; } copy];
@@ -542,13 +552,132 @@ static void AxsAiSiriTestDelegateRoutes(void) {
     IMP parent = class_getMethodImplementation(delegate.class, @selector(commandOnly:));
     AxsAiSiriTestChildDelegate *child = [AxsAiSiriTestChildDelegate new];
     AxsAiSiriPrepareDelegateProbe(child, @"delegate", AxsAiSiriTestInstall);
-    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 8, @"inherited callbacks receive concrete subclass hooks");
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 10, @"inherited callbacks receive concrete subclass hooks");
     AxsAiSiriCheck(parent == class_getMethodImplementation(delegate.class, @selector(commandOnly:)),
         @"subclass setup does not replace the superclass method");
     [child commandOnly:command];
     AxsAiSiriCheck(child.calls == 1 && child.lastCommand == command, @"inherited original chain runs once");
     AxsAiSiriPrepareDelegateProbe([NSObject new], @"delegate", AxsAiSiriTestInstall);
-    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 8, @"root NSObject cannot be instrumented");
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 10, @"root NSObject cannot be instrumented");
+    [session end];
+}
+
+static SAUIAddViews *AxsAiSiriDelegateNative(AFUISiriSession *session, AxsAiSiriTestDelegate *delegate, id completion) {
+    SAUIAddViews *native = [SAUIAddViews addViews];
+    native.refId = @"delegate-ref";
+    native.displayTarget = @"Primary";
+    native.dialogPhase = @"Summary";
+    native.responseMode = @"Test";
+    native.views = @[[NSObject new]];
+    [session assistantConnection:nil receivedCommand:native completion:nil];
+    [delegate siriSessionDidReceiveAddViewsCommand:native completion:completion];
+    return native;
+}
+
+static void AxsAiSiriTestIndependentCompletions(void) {
+    __block NSUInteger nativeCalls = 0;
+    id independent = AxsAiSiriIndependentCompletion([^(id response) { nativeCalls++; } copy]);
+    AxsAiSiriCheck(independent != nil, @"object completion ABI supported");
+    ((void (^)(id))independent)([NSObject new]);
+    independent = AxsAiSiriIndependentCompletion([^{ nativeCalls++; } copy]);
+    AxsAiSiriCheck(independent != nil, @"zero argument completion ABI supported");
+    ((void (^)(void))independent)();
+    AxsAiSiriCheck(nativeCalls == 0, @"independent completions never call native completion");
+    AxsAiSiriCheck(!AxsAiSiriIndependentCompletion(nil), @"missing completion rejected");
+    AxsAiSiriCheck(!AxsAiSiriIndependentCompletion([NSObject new]), @"non-block completion rejected");
+    AxsAiSiriCheck(!AxsAiSiriIndependentCompletion(^(double value) {}), @"scalar completion ABI rejected");
+    AxsAiSiriCheck(!AxsAiSiriIndependentCompletion(^id(id value) { return value; }), @"nonvoid completion ABI rejected");
+}
+
+static void AxsAiSiriTestDelegateDelivery(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriTestDelegate *delegate = [AxsAiSiriTestDelegate new];
+    session.axsAiSiriDelegate = delegate;
+    AxsAiSiriPrepareDelegateProbe(delegate, @"delegate", AxsAiSiriTestInstall);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"delegate delivery recognition");
+    AxsAiSiriPump(0.03);
+    __block NSUInteger nativeCompletions = 0;
+    id nativeCompletion = [^(id response) { nativeCompletions++; } copy];
+    SAUIAddViews *native = AxsAiSiriDelegateNative(session, delegate, nativeCompletion);
+    AxsAiSiriCheck(delegate.delivered.count == 1, @"native forwarding occurs before supplemental delivery");
+    AxsAiSiriWait(^BOOL { return delegate.delivered.count == 2; }, @"observed delegate delivers without turn or timestamp");
+    SAUIAddViews *reply = delegate.delivered.lastObject;
+    AxsAiSiriCheck(native.views.count == 1 && reply != native, @"native command is not modified");
+    AxsAiSiriCheck([reply.refId isEqual:@"delegate-ref"] && [reply.responseMode isEqual:@"Test"],
+        @"delegate presentation metadata reused");
+    AxsAiSiriCheck([[(SAUIAssistantUtteranceView *)reply.views.firstObject text] isEqual:@"Local probe."],
+        @"delegate receives fixed reply");
+    AxsAiSiriCheck(reply.supplemental && !reply.requiresResponse, @"delegate reply remains supplemental");
+    AxsAiSiriCheck(nativeCompletions == 1 && delegate.lastCompletion != nativeCompletion,
+        @"native completion is neither reused nor called twice");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"delegate delivery never calls the unused execution path");
+    AxsAiSiriCheck(AxsAiSiriHasEvent(@"answer-submitted") && AxsAiSiriHasEvent(@"answer-delivery-completed"),
+        @"delegate submission and acknowledgement recorded");
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(delegate.delivered.count == 2, @"synthetic callback cannot recurse");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    delegate = [AxsAiSiriTestDelegate new];
+    session.axsAiSiriDelegate = delegate;
+    AxsAiSiriDelegateNative(session, delegate, nativeCompletion);
+    [AxsAiSiriConfig setValue:@YES forPreferenceKey:@"speakReply"];
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return delegate.delivered.count == 2; }, @"delegate context can precede recognition worker");
+    reply = delegate.delivered.lastObject;
+    AxsAiSiriCheck([[(SAUIAssistantUtteranceView *)reply.views.firstObject speakableText] isEqual:@"Local probe."],
+        @"delegate delivery preserves speech opt-in");
+    [session end];
+
+    // A command from a previous generation cannot authorize the next request.
+    session = AxsAiSiriNewSession();
+    delegate = [AxsAiSiriTestDelegate new];
+    session.axsAiSiriDelegate = delegate;
+    native = [SAUIAddViews addViews];
+    [session assistantConnection:nil receivedCommand:native completion:nil];
+    [session assistantConnectionRequestWillStart:nil];
+    [delegate siriSessionDidReceiveAddViewsCommand:native completion:nativeCompletion];
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriPump(0.08);
+    AxsAiSiriCheck(delegate.delivered.count == 1, @"old command cannot bind a new generation");
+    [session end];
+
+    for (NSUInteger invalidation = 0; invalidation < 4; invalidation++) {
+        session = AxsAiSiriNewSession();
+        delegate = [AxsAiSiriTestDelegate new];
+        session.axsAiSiriDelegate = delegate;
+        AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+        AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"recognition before delegate invalidation");
+        AxsAiSiriPump(0.03);
+        AxsAiSiriDelegateNative(session, delegate, nativeCompletion);
+        if (invalidation == 0) [session end];
+        if (invalidation == 1) [session assistantConnectionRequestWillStart:nil];
+        if (invalidation == 2) [[AxsAiSiriProbeManager shared] preferencesChanged];
+        if (invalidation == 3) session.axsAiSiriDelegate = [AxsAiSiriTestDelegate new];
+        AxsAiSiriPump(0.05);
+        AxsAiSiriCheck(delegate.delivered.count == 1, @"closed, replaced or invalidated delegate context cannot publish");
+        [session end];
+    }
+
+    session = AxsAiSiriNewSession();
+    delegate = [AxsAiSiriTestDelegate new];
+    session.axsAiSiriDelegate = delegate;
+    AxsAiSiriDelegateNative(session, delegate, nativeCompletion);
+    AxsAiSiriRecognize(session, @"ordinary question");
+    AxsAiSiriPump(0.08);
+    AxsAiSiriCheck(delegate.delivered.count == 1, @"unmatched question only receives native answer");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    delegate = [AxsAiSiriTestDelegate new];
+    session.axsAiSiriDelegate = delegate;
+    [AxsAiSiriConfig setValue:@NO forPreferenceKey:@"enabled"];
+    AxsAiSiriDelegateNative(session, delegate, nativeCompletion);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriPump(0.08);
+    AxsAiSiriCheck(delegate.delivered.count == 1 && !AxsAiSiriHasEvent(@"answer-submitted"),
+        @"disabled delegate path never supplements native answer");
     [session end];
 }
 
@@ -565,6 +694,8 @@ int main(void) {
         AxsAiSiriTestRejection();
         AxsAiSiriTestOptInCapture();
         AxsAiSiriTestDelegateRoutes();
+        AxsAiSiriTestIndependentCompletions();
+        AxsAiSiriTestDelegateDelivery();
         NSLog(@"PASS: %lu checks", (unsigned long)AxsAiSiriChecks);
     }
     return 0;

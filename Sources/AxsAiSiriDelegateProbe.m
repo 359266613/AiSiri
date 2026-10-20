@@ -1,7 +1,37 @@
 #import "AxsAiSiriDelegateProbe.h"
 #import "AxsAiSiriProbeManager.h"
+#import "AxsAiSiriDiagnostics.h"
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
+
+id AxsAiSiriIndependentCompletion(id nativeCompletion) {
+    Class blockClass = NSClassFromString(@"NSBlock");
+    if (!blockClass || ![nativeCompletion isKindOfClass:blockClass]) return nil;
+    // Use libclosure's exported signature accessor, not a hand-parsed block layout
+    // (descriptor pointers and compact layouts differ with pointer authentication).
+    static const char *(*signatureForBlock)(void *);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        signatureForBlock = (const char *(*)(void *))dlsym(RTLD_DEFAULT, "_Block_signature");
+    });
+    if (!signatureForBlock) return nil;
+    const char *encoding = signatureForBlock((__bridge void *)nativeCompletion);
+    if (!encoding) return nil;
+    NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:encoding];
+    if (!signature || strcmp(signature.methodReturnType, @encode(void)) != 0) return nil;
+    if (signature.numberOfArguments == 1) {
+        return [^{
+            AxsAiSiriRecord(@"answer-delivery-completed", @{@"contextSource": @"delegate-add-views"});
+        } copy];
+    }
+    if (signature.numberOfArguments == 2 && [signature getArgumentTypeAtIndex:1][0] == '@') {
+        return [^(id response) {
+            AxsAiSiriRecord(@"answer-delivery-completed", @{@"contextSource": @"delegate-add-views"});
+        } copy];
+    }
+    return nil;
+}
 
 static BOOL AxsAiSiriCommandSelector(NSString *name) {
     return [name rangeOfString:@"command" options:NSCaseInsensitiveSearch].location != NSNotFound ||
@@ -106,7 +136,10 @@ void AxsAiSiriPrepareDelegateProbe(id delegate, NSString *role, AxsAiSiriMessage
                 BOOL compatible = AxsAiSiriObjectCallback(methods[i]);
                 NSString *key = [NSString stringWithFormat:@"%@/%@", className, name];
                 BOOL installed = [hooked containsObject:key];
-                if (declared && compatible && !installed && hooked.count < 24) {
+                // Reserve room for the confirmed display path even after other
+                // delegate classes have used the general diagnostic hook budget.
+                BOOL displayRoute = [name isEqualToString:@"siriSessionDidReceiveAddViewsCommand:completion:"];
+                if (declared && compatible && !installed && (hooked.count < 24 || (displayRoute && hooked.count < 32))) {
                     NSUInteger args = method_getNumberOfArguments(methods[i]) - 2;
                     // Each block owns its original trampoline for this exact method.
                     __block IMP original = NULL;

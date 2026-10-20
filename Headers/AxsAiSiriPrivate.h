@@ -17,6 +17,12 @@
 - (void)_performBlockWithDelegate:(id)block;
 @end
 
+// Confirmed by the device's AFUIViewControllerServing proxy and protocol metadata.
+// Completion payload is intentionally opaque; never reuse the native completion.
+@protocol AxsAiSiriAddViewsDelivery <NSObject>
+- (void)siriSessionDidReceiveAddViewsCommand:(id)command completion:(id)completion;
+@end
+
 @interface AFSpeechRecognition : NSObject
 - (id)oneBestTranscript;
 @end

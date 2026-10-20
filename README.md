@@ -11,13 +11,17 @@
 - 问句必须从前缀开始，且前缀后有实际内容；空前缀不会接管所有问句。
 - 匹配后尝试追加固定回答，每轮最多投递一次。
 - 原生 Siri 处理仍保留，因此原生回答与测试回答可能同时出现。
-- 仅复用同轮观察到的原生 `SAUIAddViews` 的 turn、时间和展示参数。
+- 优先复用同轮原生 `SAUIAddViews` 实际经过的
+  `siriSessionDidReceiveAddViewsCommand:completion:` 展示入口及展示参数；
+  该入口不需要 turn 或时间，不再因等待旧执行入口而超时。
+- 旧执行路径仍仅使用实际观察到的 turn 和时间，不伪造参数。
 - 拿不到原生上下文时最多等待 8 秒，然后放弃并记录原因。
 - 监听公开执行、命令接收、内部执行及批量执行路径；接收与批量入口仅用于诊断，
-  不会猜测 turn 或时间，内部执行入口观察到完整原生参数后才可用于投递。
+  不会猜测 turn 或时间，内部执行入口观察到完整原生参数后也可用于投递。
 - 从会话的 `delegate` / `localDelegate` 读取运行时类名及命令方法；
   仅监听协议声明且签名兼容的对象参数回调，原始参数和 completion 原样转发。
-  此阶段 delegate 监听仅诊断，不向尚未验证的入口投递回答。
+- delegate 投递必须同时满足：原生命令已在本轮收到、实际转交给当前 delegate、
+  原生 completion 签名受支持。使用独立 completion，不改原生命令，也不复用其回调。
 - 播报默认关闭；开启后只设置 `speakableText`，是否实际播报需要真机确认。
 - 关闭 Siri、开始新请求或修改设置会使旧测试结果失效。
 - 默认不将识别原文、回答原文、音频、会话标识或密钥写入日志。
@@ -114,6 +118,8 @@ Windows 可先运行工程静态检查：
 | `probe-timeout` | 等待上下文超时，附视图、turn 和时间是否可用 |
 | `probe-session-ended` | 已识别但尚未投递时会话结束，`replyPending` 表示是否已排入回答 |
 | `answer-submitted` | 已尝试投递，必须人工确认实际画面与声音 |
+| `answer-delivery-completed` | 独立投递回调已返回，不代表已经显示或播报 |
+| `delegate-completion-unsupported` | 无法确认原生 completion 签名，不猜测回调 ABI |
 | `presentation-unavailable` | 回答对象工厂或投递入口不可用 |
 | `transcript-exception` / `presentation-exception` | 私有接口抛出异常，仅记录异常名称 |
 | `context-exception` | 读取原生展示参数时异常，仅记录路径和异常名称 |
@@ -123,17 +129,21 @@ Windows 可先运行工程静态检查：
 子系统为 `com.axs.aisiri`；面板无法读取统一日志，需用设备日志工具查看。
 日志文件可能保留上次启动的信息，反馈时注意时间与 PID。
 
-delegate 路径诊断版的复制标题为 `delegate-path-diagnostics-v4`。更新后保持现有前缀，
+delegate 投递修复版的复制标题为 `delegate-delivery-v5`。更新后保持现有前缀，
 重新唤起 Siri 并测试一次，等待至少 10 秒再复制诊断。
 `native-command-path` 的 `path` 区分 `received-command`、`public-execute`、
 `internal-execute` 和 `batch-execute`；`answer-submitted.contextSource`
-记录实际复用上下文的路径。看到命令接收不等于已经拿到可投递的上下文。
+记录实际复用上下文的路径，新的展示入口记为 `delegate-add-views`。
+看到命令接收不等于已经拿到可投递的上下文。
 
 `delegate-inventory.methods` 的 `protocolDeclared`、`signatureSupported` 和
 `hookInstalled` 区分「协议确认」「签名兼容」「已监听」。
 仅支持返回 `void`、1 至 4 个对象参数的协议命令回调；其他方法只报告，不猜测 ABI。
 不记录参数内容、对象地址或会话标识。每个进程最多发现 8 个角色/类组合、
-安装 24 个回调监听；清单与回调摘要按设置周期去重，仍受 120 条日志总上限约束。
+安装 24 个通用回调监听，另为展示入口保留至总计 32 个的额度；
+清单与回调摘要按设置周期去重，仍受 120 条日志总上限约束。
+completion 签名通过 libclosure 的 `_Block_signature` 读取，仅接受返回 `void`、
+无参数或单个对象响应的 block；不可用或签名不符时放弃该路径。
 
 ## 已知边界
 

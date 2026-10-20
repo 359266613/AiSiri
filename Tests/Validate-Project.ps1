@@ -84,6 +84,10 @@ Assert-Project ($delegateProbe -match 'hooked.count < 24') 'Delegate hook count 
 Assert-Project ($delegateProbe -notmatch 'objc_msgSend|NSInvocation|performSelector:') 'Do not invoke private candidates speculatively.'
 Assert-Project ($makefile -match 'Sources/AxsAiSiriDelegateProbe.m') 'Delegate probe must be compiled.'
 Assert-Project ((Read-Project 'Sources/AxsAiSiriDelegateProbe.h') -match 'FOUNDATION_EXPORT void AxsAiSiriPrepareDelegateProbe') 'Delegate entry point needs C linkage from Logos Objective-C++.'
+Assert-Project ($delegateProbe -match 'dlsym\(RTLD_DEFAULT, "_Block_signature"\)') 'Completion ABI must be read through libclosure, not guessed.'
+Assert-Project ($delegateProbe -match 'signature.numberOfArguments == 1') 'Zero-argument native completion must be supported.'
+Assert-Project ($delegateProbe -match 'signature.numberOfArguments == 2') 'Object-response native completion must be supported.'
+Assert-Project ($delegateProbe -notmatch 'struct .*Block|Block_layout') 'Do not hand-parse authenticated block descriptors.'
 
 $manager = Read-Project 'Sources/AxsAiSiriProbeManager.m'
 Assert-Project ($manager -match 'if \(!config.enabled\) return;') 'Enabled guard missing.'
@@ -94,8 +98,14 @@ Assert-Project ($manager -match 'AxsAiSiriSyntheticCommandKey') 'Recursive comma
 Assert-Project ($manager -notmatch 'NSURLSession|api\.openai\.com|Authorization') 'The local probe must not make model requests.'
 Assert-Project ($manager -notmatch '@"transcript"\s*:') 'Diagnostics must not contain transcript text.'
 Assert-Project ($manager -match 'state.commandPaths.count < 16') 'Command path diagnostics must be bounded per turn.'
-Assert-Project ($manager -match 'if \(!turn \|\| !isfinite\(time\)\) return;') 'Only real execution metadata can enable presentation.'
+Assert-Project ($manager -match 'if \(!turn \|\| !isfinite\(time\)\) return;') 'Legacy execution must still require real turn and time.'
 Assert-Project ($manager -match '@"probe-session-ended"') 'Pending cancellation must be diagnosed.'
+Assert-Project ($manager -match 'state.generation != context.generation') 'Delegate callbacks must belong to the same request generation.'
+Assert-Project ($manager -match '\[session delegate\] != delegate') 'Only the current session delegate can establish delivery context.'
+Assert-Project ($manager -match 'AxsAiSiriIndependentCompletion\(arguments\[1\]\)') 'Do not reuse the native completion.'
+Assert-Project ($manager -match 'siriSessionDidReceiveAddViewsCommand:command completion:deliveryCompletion') 'Use the observed addViews delegate route.'
+Assert-Project ($manager -match 'context.session = session') 'Native received commands must carry weak session provenance.'
+Assert-Project ($manager -notmatch 'mach_absolute_time\(\)|state.turn = NSUUID') 'Do not fabricate turn metadata for delegate delivery.'
 
 $sources = @(
     'Hooks/AxsAiSiriSessionHooks.xm',
