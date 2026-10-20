@@ -3,6 +3,7 @@
 #import "AxsAiSiriConfig.h"
 #import "AxsAiSiriDiagnostics.h"
 #import "AxsAiSiriTrigger.h"
+#import "AxsAiSiriTranscript.h"
 #import <objc/runtime.h>
 #include <math.h>
 
@@ -100,23 +101,23 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
             AxsAiSiriConfig *config = [AxsAiSiriConfig new];
             if (!config.enabled) return;
             NSString *className = recognition ? NSStringFromClass([recognition class]) : @"nil";
-            if (![recognition respondsToSelector:@selector(oneBestTranscript)]) {
-                AxsAiSiriRecord(@"unsupported-recognition", @{@"class": className});
-                return;
-            }
             NSString *transcript;
-            @try { transcript = [(AFSpeechRecognition *)recognition oneBestTranscript]; }
+            NSString *transcriptPath = nil;
+            // iOS 16.5 delivers SASSpeechRecognized, not necessarily AFSpeechRecognition.
+            @try { transcript = AxsAiSiriExtractTranscript(recognition, &transcriptPath); }
             @catch (NSException *exception) {
                 AxsAiSiriRecord(@"transcript-exception", @{@"name": exception.name});
                 return;
             }
-            if (![transcript isKindOfClass:NSString.class]) {
-                AxsAiSiriRecord(@"invalid-transcript", @{@"class": className});
+            if (!transcript.length) {
+                AxsAiSiriRecord(transcriptPath ? @"invalid-transcript" : @"unsupported-recognition",
+                    @{@"class": className, @"path": transcriptPath ?: @"unsupported"});
                 return;
             }
             BOOL match = AxsAiSiriMatchesTrigger(transcript, config.prefix);
             AxsAiSiriRecord(@"final-recognition", @{
-                @"class": className, @"characters": @(transcript.length), @"prefixMatched": @(match)
+                @"class": className, @"path": transcriptPath,
+                @"characters": @(transcript.length), @"prefixMatched": @(match)
             });
             if (!match) return;
             NSString *reply = [config.reply stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];

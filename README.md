@@ -27,6 +27,7 @@ Headers/AxsAiSiriPrivate.h           实际编译使用的最小声明
 Headers/AF*.h, SA*.h           用户提供的原始导出文件，保持不变
 Sources/AxsAiSiriProbeManager.m      固定回答验证与原生上下文复用
 Sources/AxsAiSiriTrigger.m           前缀匹配
+Sources/AxsAiSiriTranscript.m        AFSpeechRecognition / ACE 识别文本提取
 Sources/AxsAiSiriConfig.m            共享设置读写
 Sources/AxsAiSiriJailbreakPath.h      用户数据路径解析
 Sources/AxsAiSiriDiagnostics.m       本地有限长度诊断与统一日志
@@ -73,7 +74,7 @@ Windows 可先运行工程静态检查：
 
 1. 将编译出的 deb 在手机上交给 Sileo 安装，按提示重新载入用户空间。
 2. 在设置中打开 AiSiri。首次先保持播报关闭。
-3. 关闭现有 Siri 界面，再重新唤醒，说「问 AI，你好」。
+3. 关闭现有 Siri 界面，先说「嘿 Siri」，等它开始听取后再说「问 AI，你好」。
 4. 观察是否出现「AiSiri 本地测试回答。这不是 OpenAI 生成的内容。」。
 5. 再测试一个不带前缀的普通 Siri 问句，确认其仍正常工作。
 6. 确认文字可见后再单独测试播报，不要把投递日志当作播报成功。
@@ -94,8 +95,8 @@ Windows 可先运行工程静态检查：
 | `session-class-not-hooked` | 10 秒内尚未安装 hook，需要检查宿主或类加载 |
 | `hook-method-missing` | 方法声明与运行时不匹配，未安装整组 hook |
 | `final-recognition` | 已收到可读取的最终结果，记录长度和前缀是否匹配 |
-| `unsupported-recognition` | 实际对象不支持 `oneBestTranscript`，记录其类名 |
-| `invalid-transcript` | 转写返回值不是字符串 |
+| `unsupported-recognition` | 实际对象既不提供直接转写，也不提供 ACE recognition 入口 |
+| `invalid-transcript` | 转写为空、ACE 结构不完整或超过长度限制 |
 | `invalid-reply` | 固定回答为空或超过 512 个 UTF-16 代码单元 |
 | `probe-timeout` | 等待上下文超时，附视图、turn 和时间是否可用 |
 | `answer-submitted` | 已尝试投递，必须人工确认实际画面与声音 |
@@ -113,5 +114,10 @@ Windows 可先运行工程静态检查：
 原生回调线程、回答可见性、音频会话行为和实际宿主只能在你的设备上确认。
 macOS 测试使用假的 Siri 对象，只验证本地逻辑，不证明私有 API 可用。
 拿到真机验证结果后，再决定补充接口、调整投递入口或接入 OpenAI。
+
+识别兼容：直接转写使用 `oneBestTranscript`；iOS 16.5 实际回调中的
+`SASSpeechRecognized` 沿 `recognition.phrases[].interpretations[0].tokens[]`
+提取文本，保留词元空格标记，不扫描其他候选来触发插件。
+`final-recognition` 的 `path` 字段区分两种提取路径，仍不记录识别原文。
 
 出现异常时先关闭 AiSiri；若无法进入设置，用越狱环境提供的安全模式卸载。

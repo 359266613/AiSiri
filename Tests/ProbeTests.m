@@ -4,6 +4,7 @@
 #import "AxsAiSiriDiagnostics.h"
 #import "AxsAiSiriProbeManager.h"
 #import "AxsAiSiriTrigger.h"
+#import "AxsAiSiriTranscript.h"
 #include <stdlib.h>
 
 static NSMutableDictionary *AxsAiSiriTestValues;
@@ -56,6 +57,44 @@ NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 @implementation AxsAiSiriTestRecognition
 - (id)oneBestTranscript { return self.transcript; }
 @end
+
+// ACE-shaped fixtures use only selectors declared by the supplied 16.5 headers.
+@interface AxsAiSiriTestACENode : NSObject
+@property (strong) id recognition;
+@property (copy) NSArray *phrases;
+@property (copy) NSArray *interpretations;
+@property (copy) NSArray *tokens;
+@property (copy) NSString *text;
+@property BOOL removeSpaceBefore;
+@property BOOL removeSpaceAfter;
+@property BOOL addSpaceAfter;
+@end
+@implementation AxsAiSiriTestACENode
+@end
+
+static AxsAiSiriTestACENode *AxsAiSiriACEToken(NSString *text, BOOL before, BOOL after) {
+    AxsAiSiriTestACENode *token = [AxsAiSiriTestACENode new];
+    token.text = text;
+    token.removeSpaceBefore = before;
+    token.removeSpaceAfter = after;
+    return token;
+}
+
+static AxsAiSiriTestACENode *AxsAiSiriACEPhrase(NSArray *tokens) {
+    AxsAiSiriTestACENode *interpretation = [AxsAiSiriTestACENode new];
+    interpretation.tokens = tokens;
+    AxsAiSiriTestACENode *phrase = [AxsAiSiriTestACENode new];
+    phrase.interpretations = @[interpretation];
+    return phrase;
+}
+
+static AxsAiSiriTestACENode *AxsAiSiriACEResult(NSArray *phrases) {
+    AxsAiSiriTestACENode *recognition = [AxsAiSiriTestACENode new];
+    recognition.phrases = phrases;
+    AxsAiSiriTestACENode *result = [AxsAiSiriTestACENode new];
+    result.recognition = recognition;
+    return result;
+}
 
 @interface AFUISiriSession ()
 @property (strong) NSMutableArray *axsAiSiriSubmitted;
@@ -140,6 +179,45 @@ static void AxsAiSiriTestTriggers(void) {
     AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"\u95eeAI", @"\u95eeAI"), @"bare prefix");
     AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"\u95eeAI:  ", @"\u95eeAI"), @"punctuation-only question");
     AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(nil, @"ask ai"), @"nil transcript");
+}
+
+static void AxsAiSiriTestACEExtraction(void) {
+    AxsAiSiriTestACENode *phrase = AxsAiSiriACEPhrase(@[
+        AxsAiSiriACEToken(@"\u95ee", NO, YES),
+        AxsAiSiriACEToken(@"AI", NO, NO),
+        AxsAiSiriACEToken(@"\uFF0C", YES, YES),
+        AxsAiSiriACEToken(@"\u4f60\u597d", NO, NO)
+    ]);
+    AxsAiSiriTestACENode *result = AxsAiSiriACEResult(@[phrase]);
+    NSString *path = nil;
+    NSString *text = AxsAiSiriExtractTranscript(result, &path);
+    AxsAiSiriCheck([text isEqual:@"\u95eeAI\uFF0C\u4f60\u597d"], @"ACE token spacing flags");
+    AxsAiSiriCheck([path isEqual:@"ace-first-interpretation"], @"ACE path diagnostics");
+    AxsAiSiriCheck(AxsAiSiriMatchesTrigger(text, @"\u95eeAI"), @"ACE text triggers probe");
+
+    AxsAiSiriTestACENode *ordinary = AxsAiSiriACEPhrase(@[AxsAiSiriACEToken(@"weather", NO, NO)]);
+    ordinary.interpretations = @[ordinary.interpretations.firstObject, phrase.interpretations.firstObject];
+    text = AxsAiSiriExtractTranscript(AxsAiSiriACEResult(@[ordinary]), NULL);
+    AxsAiSiriCheck([text isEqual:@"weather"], @"ignore alternate interpretations");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(text, @"\u95eeAI"), @"alternate candidate cannot trigger");
+
+    text = AxsAiSiriExtractTranscript(AxsAiSiriACEResult(@[
+        AxsAiSiriACEPhrase(@[AxsAiSiriACEToken(@"Ask", NO, NO)]),
+        AxsAiSiriACEPhrase(@[AxsAiSiriACEToken(@"AI", NO, NO), AxsAiSiriACEToken(@"hello", NO, NO)])
+    ]), NULL);
+    AxsAiSiriCheck([text isEqual:@"Ask AI hello"], @"join multiple ACE phrases");
+    AxsAiSiriCheck(!AxsAiSiriExtractTranscript(AxsAiSiriACEResult(@[]), NULL), @"empty ACE result");
+    AxsAiSiriCheck(!AxsAiSiriExtractTranscript(AxsAiSiriACEResult(@[[NSObject new]]), NULL), @"invalid ACE phrase");
+    AxsAiSiriCheck(!AxsAiSiriExtractTranscript(AxsAiSiriACEResult(@[
+        AxsAiSiriACEPhrase(@[AxsAiSiriACEToken(nil, NO, NO)])
+    ]), NULL), @"invalid ACE token");
+    AxsAiSiriCheck(!AxsAiSiriExtractTranscript([NSObject new], &path) && !path, @"unsupported shape");
+
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriNativeContext(session);
+    [session assistantConnection:nil speechRecognized:result];
+    AxsAiSiriWait(^BOOL { return session.axsAiSiriSubmitted.count == 1; }, @"ACE recognition submits fixed reply");
+    [session end];
 }
 
 static void AxsAiSiriTestSubmission(void) {
@@ -259,6 +337,7 @@ int main(void) {
         AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy];
         AxsAiSiriTestEvents = [NSMutableArray array];
         AxsAiSiriTestTriggers();
+        AxsAiSiriTestACEExtraction();
         AxsAiSiriTestSubmission();
         AxsAiSiriTestCancellation();
         AxsAiSiriTestRejection();
