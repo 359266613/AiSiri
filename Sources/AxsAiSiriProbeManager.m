@@ -28,6 +28,8 @@ static char AxsAiSiriSyntheticCommandKey;
 @property (copy) NSString *dialogPhase;
 @property (copy) NSString *responseMode;
 @property NSUInteger preferenceEpoch;
+@property (strong) NSMutableSet<NSString *> *commandPaths;
+@property (copy) NSString *contextSource;
 @end
 @implementation AxsAiSiriProbeState
 @end
@@ -79,6 +81,17 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
 - (void)endSession:(id)session {
     @synchronized (session) {
         AxsAiSiriProbeState *state = AxsAiSiriState(session);
+        // Explain pending-result cancellation without logging any Siri content.
+        if (state.active && state.finalSeen && !state.published) {
+            NSDictionary *details = @{
+                @"nativeViewsSeen": @(state.nativeViewsSeen),
+                @"nativeContextAvailable": @(state.contextReady),
+                @"replyPending": @(state.reply != nil)
+            };
+            dispatch_async(self.worker, ^{
+                if ([AxsAiSiriConfig new].enabled) AxsAiSiriRecord(@"probe-session-ended", details);
+            });
+        }
         state.active = NO;
         state.generation++;
         state.reply = nil;
@@ -167,7 +180,8 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
                         @"nativeContextAvailable": @(state.contextReady),
                         @"nativeViewsSeen": @(state.nativeViewsSeen),
                         @"nativeTurnAvailable": @(state.nativeTurnAvailable),
-                        @"nativeTimeValid": @(state.nativeTimeValid)
+                        @"nativeTimeValid": @(state.nativeTimeValid),
+                        @"commandPathsSeen": @(state.commandPaths.count)
                     });
                 }
             });
@@ -177,24 +191,57 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
 
 #pragma mark - Reuse observed native ACE metadata
 - (void)observeCommand:(id)command session:(id)session turn:(id)turn time:(double)time {
+    [self observeCommand:command session:session turn:turn time:time source:@"public-execute"];
+}
+
+- (void)observeCommand:(id)command session:(id)session turn:(id)turn time:(double)time source:(NSString *)source {
+    if (!command) return;
     if (objc_getAssociatedObject(command, &AxsAiSiriSyntheticCommandKey)) return;
     Class addViewsClass = NSClassFromString(@"SAUIAddViews");
-    if (!addViewsClass || ![command isKindOfClass:addViewsClass]) return;
+    BOOL isViews = addViewsClass && [command isKindOfClass:addViewsClass];
     @synchronized (session) {
         AxsAiSiriProbeState *state = AxsAiSiriState(session);
         if (!state.active) return;
+        // Bounded path/class summaries identify alternate routes, never payloads.
+        if (!state.commandPaths) state.commandPaths = [NSMutableSet set];
+        NSString *className = NSStringFromClass([command class]);
+        NSString *key = [NSString stringWithFormat:@"%@/%@", source, className];
+        if (state.commandPaths.count < 16 && ![state.commandPaths containsObject:key]) {
+            [state.commandPaths addObject:key];
+            NSDictionary *details = @{
+                @"path": source, @"class": className, @"isAddViews": @(isViews),
+                @"hasTurn": @(turn != nil), @"timeValid": @(isfinite(time))
+            };
+            // Snapshot events must survive a synchronous native session close.
+            dispatch_async(self.worker, ^{
+                if (![AxsAiSiriConfig new].enabled) return;
+                AxsAiSiriRecord(@"native-command-path", details);
+            });
+        }
+        if (!isViews) return;
         state.nativeViewsSeen = YES;
-        state.nativeTurnAvailable = turn != nil;
-        state.nativeTimeValid = isfinite(time);
+        state.nativeTurnAvailable |= turn != nil;
+        state.nativeTimeValid |= isfinite(time);
         if (!turn || !isfinite(time)) return;
         SAUIAddViews *views = command;
+        // A reception-only observation must never erase usable execution metadata.
+        @try {
+            NSString *refId = [views.refId copy];
+            NSString *displayTarget = [views.displayTarget copy];
+            NSString *dialogPhase = [views.dialogPhase copy];
+            NSString *responseMode = [views.responseMode copy];
+            state.refId = refId;
+            state.displayTarget = displayTarget;
+            state.dialogPhase = dialogPhase;
+            state.responseMode = responseMode;
+        } @catch (NSException *exception) {
+            AxsAiSiriRecord(@"context-exception", @{@"name": exception.name, @"path": source});
+            return;
+        }
         state.turn = turn;
         state.commandTime = time;
         state.contextReady = YES;
-        state.refId = views.refId;
-        state.displayTarget = views.displayTarget;
-        state.dialogPhase = views.dialogPhase;
-        state.responseMode = views.responseMode;
+        state.contextSource = source;
     }
     __weak id weakSession = session;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -253,7 +300,8 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
             details = @{
                 @"speechRequested": @(state.speak),
                 @"hasRefId": @(state.refId.length > 0),
-                @"characters": @(state.reply.length)
+                @"characters": @(state.reply.length),
+                @"contextSource": state.contextSource ?: @"unknown"
             };
         } @catch (NSException *exception) {
             AxsAiSiriRecord(@"presentation-exception", @{@"name": exception.name});

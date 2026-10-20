@@ -51,7 +51,7 @@ void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
 }
 
 NSString *AxsAiSiriReadDiagnostics(void) {
-    NSMutableString *output = [NSMutableString stringWithString:@"AiSiri local probe / prefix-diagnostics-v2\n"];
+    NSMutableString *output = [NSMutableString stringWithString:@"AiSiri local probe / command-path-diagnostics-v3\n"];
     NSString *directory = AxsAiSiriDiagnosticDirectory();
     NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:directory error:NULL];
     for (NSString *name in [names sortedArrayUsingSelector:@selector(compare:)]) {

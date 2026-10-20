@@ -1,0 +1,169 @@
+AiSiri local probe / prefix-diagnostics-v2
+
+[SpringBoard.plist]
+(
+        {
+        details =         {
+            bundle = "com.apple.springboard";
+            system = "Version 16.5 (Build 20F66)";
+        };
+        event = "probe-loaded";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514120.858398";
+    },
+        {
+        details =         {
+            class = AFUISiriSession;
+        };
+        event = "hooks-installed";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514123.568915";
+    },
+        {
+        details =         {
+            characters = 6;
+            class = SASSpeechRecognized;
+            configuredPrefix = "\U6d4b\U8bd5\U56de\U7b54";
+            path = "ace-first-interpretation";
+            prefixMatched = 0;
+            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+        };
+        event = "final-recognition";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514141.326302";
+    },
+        {
+        details =         {
+            captureRequest = "1792514252.194923";
+            configuredPrefix = "\U6d4b\U8bd5\U56de\U7b54";
+            prefixMatched = 0;
+            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
+        };
+        event = "opt-in-test-transcript";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514141.326368";
+    },
+        {
+        details =         {
+            characters = 4;
+            class = SASSpeechRecognized;
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            path = "ace-first-interpretation";
+            prefixMatched = 0;
+            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+        };
+        event = "final-recognition";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514246.0679";
+    },
+        {
+        details =         {
+            captureRequest = "1792514357.709145";
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            prefixMatched = 0;
+            testText = "\U8fd9\U662f\U4f60\U597d";
+        };
+        event = "opt-in-test-transcript";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514246.067964";
+    },
+        {
+        details =         {
+            characters = 6;
+            class = SASSpeechRecognized;
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            path = "ace-first-interpretation";
+            prefixMatched = 1;
+            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+        };
+        event = "final-recognition";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514266.917709";
+    },
+        {
+        details =         {
+            captureRequest = "1792514380.068488";
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            prefixMatched = 1;
+            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
+        };
+        event = "opt-in-test-transcript";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514266.917789";
+    },
+        {
+        details =         {
+            characters = 6;
+            class = SASSpeechRecognized;
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            path = "ace-first-interpretation";
+            prefixMatched = 1;
+            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+        };
+        event = "final-recognition";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514389.465814";
+    },
+        {
+        details =         {
+            captureRequest = "1792514502.766567";
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            prefixMatched = 1;
+            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
+        };
+        event = "opt-in-test-transcript";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514389.465925";
+    },
+        {
+        details =         {
+            characters = 6;
+            class = SASSpeechRecognized;
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            path = "ace-first-interpretation";
+            prefixMatched = 1;
+            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+        };
+        event = "final-recognition";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514417.700947";
+    },
+        {
+        details =         {
+            captureRequest = "1792514531.134171";
+            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
+            prefixMatched = 1;
+            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
+        };
+        event = "opt-in-test-transcript";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514417.701039";
+    },
+        {
+        details =         {
+            nativeContextAvailable = 0;
+            nativeTimeValid = 0;
+            nativeTurnAvailable = 0;
+            nativeViewsSeen = 0;
+        };
+        event = "probe-timeout";
+        pid = 10716;
+        process = SpringBoard;
+        time = "1792514425.707065";
+    }
+)
+
+Panel saved prefix: 这是回答
+Prefix source: /var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist

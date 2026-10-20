@@ -2,6 +2,7 @@
 #import <mach-o/dyld.h>
 #import <objc/runtime.h>
 #include <atomic>
+#include <math.h>
 #import "AxsAiSiriPrivate.h"
 #import "AxsAiSiriConfig.h"
 #import "AxsAiSiriDiagnostics.h"
@@ -22,8 +23,9 @@
 }
 
 - (void)performAceCommand:(id)command turnIdentifier:(id)turn machAbsoluteTime:(double)time {
+    // Capture before native forwarding can synchronously end or replace the turn.
+    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:turn time:time source:@"public-execute"];
     %orig;
-    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:turn time:time];
 }
 
 - (void)assistantConnectionDismissAssistant:(id)connection {
@@ -41,6 +43,41 @@
     %orig;
 }
 
+%end
+%end
+
+// Optional paths are independent: a missing selector must not disable core hooks.
+%group AxsAiSiriReceivedProbe
+%hook AFUISiriSession
+- (void)assistantConnection:(id)connection receivedCommand:(id)command completion:(id)completion {
+    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:nil time:NAN source:@"received-command"];
+    %orig;
+}
+%end
+%end
+
+%group AxsAiSiriInternalProbe
+%hook AFUISiriSession
+- (void)_performAceCommand:(id)command turnIdentifier:(id)turn machAbsoluteTime:(double)time conflictHandler:(id)handler {
+    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:turn time:time source:@"internal-execute"];
+    %orig;
+}
+%end
+%end
+
+%group AxsAiSiriBatchProbe
+%hook AFUISiriSession
+- (void)_performAceCommands:(id)commands {
+    // The dump does not guarantee an array; never enumerate arbitrary objects.
+    if ([commands isKindOfClass:NSArray.class]) {
+        NSUInteger count = 0;
+        for (id command in commands) {
+            if (count++ >= 32) break;
+            [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:nil time:NAN source:@"batch-execute"];
+        }
+    }
+    %orig;
+}
 %end
 %end
 
@@ -65,6 +102,24 @@ static void AxsAiSiriInstallIfAvailable(void) {
         }
     }
     %init(AxsAiSiriSiriProbe, AFUISiriSession = cls);
+    if (class_getInstanceMethod(cls, @selector(assistantConnection:receivedCommand:completion:))) {
+        %init(AxsAiSiriReceivedProbe, AFUISiriSession = cls);
+        AxsAiSiriRecord(@"command-hook-installed", @{@"path": @"received-command"});
+    } else {
+        AxsAiSiriRecord(@"command-hook-unavailable", @{@"path": @"received-command"});
+    }
+    if (class_getInstanceMethod(cls, @selector(_performAceCommand:turnIdentifier:machAbsoluteTime:conflictHandler:))) {
+        %init(AxsAiSiriInternalProbe, AFUISiriSession = cls);
+        AxsAiSiriRecord(@"command-hook-installed", @{@"path": @"internal-execute"});
+    } else {
+        AxsAiSiriRecord(@"command-hook-unavailable", @{@"path": @"internal-execute"});
+    }
+    if (class_getInstanceMethod(cls, @selector(_performAceCommands:))) {
+        %init(AxsAiSiriBatchProbe, AFUISiriSession = cls);
+        AxsAiSiriRecord(@"command-hook-installed", @{@"path": @"batch-execute"});
+    } else {
+        AxsAiSiriRecord(@"command-hook-unavailable", @{@"path": @"batch-execute"});
+    }
     AxsAiSiriInstalled = YES;
     AxsAiSiriRecord(@"hooks-installed", @{@"class": NSStringFromClass(cls)});
 }

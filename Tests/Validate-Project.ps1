@@ -65,6 +65,11 @@ Assert-Project ($hook -match 'class_getInstanceMethod') 'Runtime method guards a
 Assert-Project ($hook -match '_dyld_register_func_for_add_image') 'Late framework loading must be handled.'
 Assert-Project ($hook -match 'speechRecognized:\(id\)recognized\s*\{\s*%orig;') 'Original recognition behavior must be retained.'
 Assert-Project ($hook -notmatch '\bcancelRequest\b') 'The probe must not cancel native requests.'
+Assert-Project ($hook -match '%group AxsAiSiriReceivedProbe') 'Command reception needs an independent optional hook.'
+Assert-Project ($hook -match '%group AxsAiSiriInternalProbe') 'Internal execution needs an independent optional hook.'
+Assert-Project ($hook -match '%group AxsAiSiriBatchProbe') 'Batch execution needs an independent optional hook.'
+Assert-Project ($hook -match 'turn:nil time:NAN source:@"received-command"') 'Reception must not fabricate execution metadata.'
+Assert-Project ($hook -match 'class_getInstanceMethod\(cls, @selector\(_performAceCommand:turnIdentifier:machAbsoluteTime:conflictHandler:\)\)') 'Internal execution must be guarded.'
 
 $manager = Read-Project 'Sources/AxsAiSiriProbeManager.m'
 Assert-Project ($manager -match 'if \(!config.enabled\) return;') 'Enabled guard missing.'
@@ -74,6 +79,9 @@ Assert-Project ($manager -match 'state.preferenceEpoch != self.epoch') 'Preferen
 Assert-Project ($manager -match 'AxsAiSiriSyntheticCommandKey') 'Recursive command guard missing.'
 Assert-Project ($manager -notmatch 'NSURLSession|api\.openai\.com|Authorization') 'The local probe must not make model requests.'
 Assert-Project ($manager -notmatch '@"transcript"\s*:') 'Diagnostics must not contain transcript text.'
+Assert-Project ($manager -match 'state.commandPaths.count < 16') 'Command path diagnostics must be bounded per turn.'
+Assert-Project ($manager -match 'if \(!turn \|\| !isfinite\(time\)\) return;') 'Only real execution metadata can enable presentation.'
+Assert-Project ($manager -match '@"probe-session-ended"') 'Pending cancellation must be diagnosed.'
 
 $sources = @(
     'Hooks/AxsAiSiriSessionHooks.xm',

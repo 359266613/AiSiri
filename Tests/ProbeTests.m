@@ -6,6 +6,7 @@
 #import "AxsAiSiriTrigger.h"
 #import "AxsAiSiriTranscript.h"
 #include <stdlib.h>
+#include <math.h>
 
 static NSMutableDictionary *AxsAiSiriTestValues;
 static NSMutableArray *AxsAiSiriTestEvents;
@@ -115,6 +116,18 @@ static AxsAiSiriTestACENode *AxsAiSiriACEResult(NSArray *phrases) {
 - (void)assistantConnectionDismissAssistant:(id)connection { [self end]; }
 - (void)end { [[AxsAiSiriProbeManager shared] endSession:self]; }
 - (void)endForReason:(long long)reason { [self end]; }
+- (void)assistantConnection:(id)connection receivedCommand:(id)command completion:(id)completion {
+    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:nil time:NAN source:@"received-command"];
+}
+- (void)_performAceCommand:(id)command turnIdentifier:(id)identifier machAbsoluteTime:(double)time conflictHandler:(id)handler {
+    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:identifier time:time source:@"internal-execute"];
+}
+- (void)_performAceCommands:(id)commands {
+    if (![commands isKindOfClass:NSArray.class]) return;
+    for (id command in commands) {
+        [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:nil time:NAN source:@"batch-execute"];
+    }
+}
 - (void)performAceCommand:(id)command turnIdentifier:(id)identifier machAbsoluteTime:(double)time {
     AxsAiSiriCheck(NSThread.isMainThread, @"submission on main thread");
     AxsAiSiriCheck([identifier isEqual:@"native-turn"], @"reuse native turn");
@@ -292,6 +305,57 @@ static void AxsAiSiriTestCancellation(void) {
     [session end];
 }
 
+static void AxsAiSiriTestCommandPaths(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    SAUIAddViews *native = [SAUIAddViews addViews];
+    native.refId = @"native-ref";
+    [session assistantConnection:nil receivedCommand:native completion:nil];
+    [session _performAceCommands:@[native]];
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"received path recognition");
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(AxsAiSiriHasEvent(@"native-command-path"), @"command paths diagnosed");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"received and batch paths never invent context");
+    [session _performAceCommand:native turnIdentifier:@"native-turn" machAbsoluteTime:NAN conflictHandler:nil];
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"nonfinite execution time rejected");
+    [session _performAceCommand:native turnIdentifier:@"native-turn" machAbsoluteTime:123.5 conflictHandler:nil];
+    // These arrive before the main-queue presentation and cannot erase its context.
+    [session assistantConnection:nil receivedCommand:native completion:nil];
+    [session _performAceCommands:@[native]];
+    AxsAiSiriWait(^BOOL { return session.axsAiSiriSubmitted.count == 1; }, @"internal path supplies real context");
+    SAUIAddViews *submitted = session.axsAiSiriSubmitted.firstObject;
+    AxsAiSiriCheck([submitted.refId isEqual:@"native-ref"], @"internal context preserves view metadata");
+    [session _performAceCommand:native turnIdentifier:@"native-turn" machAbsoluteTime:123.5 conflictHandler:nil];
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 1, @"multiple paths cannot duplicate submission");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"pending recognition before close");
+    AxsAiSiriPump(0.03);
+    [session end];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"probe-session-ended"); }, @"pending cancellation has diagnostics");
+    [session _performAceCommand:native turnIdentifier:@"native-turn" machAbsoluteTime:123.5 conflictHandler:nil];
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"internal path respects ended session");
+
+    session = AxsAiSiriNewSession();
+    [session assistantConnection:nil receivedCommand:[NSObject new] completion:nil];
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    [session end];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"probe-session-ended"); }, @"early close is diagnosed before reply is queued");
+    AxsAiSiriCheck(AxsAiSiriHasEvent(@"native-command-path"), @"path snapshot survives synchronous session close");
+
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@NO forPreferenceKey:@"enabled"];
+    [session assistantConnection:nil receivedCommand:[NSObject new] completion:nil];
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(!AxsAiSiriHasEvent(@"native-command-path"), @"path diagnostics respect disabled preference");
+    [session end];
+}
+
 static void AxsAiSiriTestRejection(void) {
     AFUISiriSession *session = AxsAiSiriNewSession();
     AxsAiSiriNativeContext(session);
@@ -376,6 +440,7 @@ int main(void) {
         AxsAiSiriTestACEExtraction();
         AxsAiSiriTestSubmission();
         AxsAiSiriTestCancellation();
+        AxsAiSiriTestCommandPaths();
         AxsAiSiriTestRejection();
         AxsAiSiriTestOptInCapture();
         NSLog(@"PASS: %lu checks", (unsigned long)AxsAiSiriChecks);

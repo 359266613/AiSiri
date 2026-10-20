@@ -9,6 +9,9 @@
 - (void)end;
 - (void)endForReason:(long long)reason;
 - (void)performAceCommand:(id)command turnIdentifier:(id)identifier machAbsoluteTime:(double)time;
+- (void)assistantConnection:(id)connection receivedCommand:(id)command completion:(id)completion;
+- (void)_performAceCommand:(id)command turnIdentifier:(id)identifier machAbsoluteTime:(double)time conflictHandler:(id)handler;
+- (void)_performAceCommands:(id)commands;
 @end
 
 @interface AFSpeechRecognition : NSObject

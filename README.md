@@ -13,6 +13,8 @@
 - 原生 Siri 处理仍保留，因此原生回答与测试回答可能同时出现。
 - 仅复用同轮观察到的原生 `SAUIAddViews` 的 turn、时间和展示参数。
 - 拿不到原生上下文时最多等待 8 秒，然后放弃并记录原因。
+- 监听公开执行、命令接收、内部执行及批量执行路径；接收与批量入口仅用于诊断，
+  不会猜测 turn 或时间，内部执行入口观察到完整原生参数后才可用于投递。
 - 播报默认关闭；开启后只设置 `speakableText`，是否实际播报需要真机确认。
 - 关闭 Siri、开始新请求或修改设置会使旧测试结果失效。
 - 默认不将识别原文、回答原文、音频、会话标识或密钥写入日志。
@@ -96,19 +98,29 @@ Windows 可先运行工程静态检查：
 | `hooks-installed` | 会话类及所有必要方法存在，已安装 hook |
 | `session-class-not-hooked` | 10 秒内尚未安装 hook，需要检查宿主或类加载 |
 | `hook-method-missing` | 方法声明与运行时不匹配，未安装整组 hook |
+| `command-hook-installed` / `command-hook-unavailable` | 新增命令路径已安装或不存在，不影响核心 hook |
+| `native-command-path` | 命令路径与类名，每轮最多 16 种组合，不记录命令内容 |
 | `final-recognition` | 已收到可读取的最终结果，记录长度和前缀是否匹配 |
 | `unsupported-recognition` | 实际对象既不提供直接转写，也不提供 ACE recognition 入口 |
 | `invalid-transcript` | 转写为空、ACE 结构不完整或超过长度限制 |
 | `invalid-reply` | 固定回答为空或超过 512 个 UTF-16 代码单元 |
 | `probe-timeout` | 等待上下文超时，附视图、turn 和时间是否可用 |
+| `probe-session-ended` | 已识别但尚未投递时会话结束，`replyPending` 表示是否已排入回答 |
 | `answer-submitted` | 已尝试投递，必须人工确认实际画面与声音 |
 | `presentation-unavailable` | 回答对象工厂或投递入口不可用 |
 | `transcript-exception` / `presentation-exception` | 私有接口抛出异常，仅记录异常名称 |
+| `context-exception` | 读取原生展示参数时异常，仅记录路径和异常名称 |
 
 日志按宿主分文件，位于 `/var/mobile/Library/Logs/AiSiri/`，
 每个宿主最多保留本次进程的最近 120 条事件。文件不可写时仍尝试使用统一日志，
 子系统为 `com.axs.aisiri`；面板无法读取统一日志，需用设备日志工具查看。
 日志文件可能保留上次启动的信息，反馈时注意时间与 PID。
+
+命令路径诊断版的复制标题为 `command-path-diagnostics-v3`。更新后保持现有前缀，
+重新唤起 Siri 并测试一次，等待至少 10 秒再复制诊断。
+`native-command-path` 的 `path` 区分 `received-command`、`public-execute`、
+`internal-execute` 和 `batch-execute`；`answer-submitted.contextSource`
+记录实际复用上下文的路径。看到命令接收不等于已经拿到可投递的上下文。
 
 ## 已知边界
 
