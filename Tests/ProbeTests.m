@@ -5,12 +5,15 @@
 #import "AxsAiSiriProbeManager.h"
 #import "AxsAiSiriTrigger.h"
 #import "AxsAiSiriTranscript.h"
+#import "AxsAiSiriDelegateProbe.h"
 #include <stdlib.h>
 #include <math.h>
 
 static NSMutableDictionary *AxsAiSiriTestValues;
 static NSMutableArray *AxsAiSiriTestEvents;
 static NSUInteger AxsAiSiriChecks;
+static NSUInteger AxsAiSiriTestDelegateHooks;
+static NSMutableDictionary *AxsAiSiriTestEventDetails;
 
 static void AxsAiSiriCheck(BOOL condition, NSString *message) {
     AxsAiSiriChecks++;
@@ -41,7 +44,10 @@ static void AxsAiSiriCheck(BOOL condition, NSString *message) {
 @end
 
 void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
-    @synchronized (AxsAiSiriTestEvents) { [AxsAiSiriTestEvents addObject:event]; }
+    @synchronized (AxsAiSiriTestEvents) {
+        [AxsAiSiriTestEvents addObject:event];
+        AxsAiSiriTestEventDetails[event] = details;
+    }
 }
 NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 
@@ -59,6 +65,50 @@ NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 @implementation AxsAiSiriTestRecognition
 - (id)oneBestTranscript { return self.transcript; }
 @end
+
+// Test-only protocol metadata drives the same signature checks as device discovery.
+@protocol AFUISiriSessionDelegate <NSObject>
+- (void)commandOnly:(id)command;
+- (void)siriSession:(id)session command:(id)command;
+- (void)siriSession:(id)session receivedCommand:(id)command completion:(id)completion;
+- (void)siriSession:(id)session command:(id)command context:(id)context completion:(id)completion;
+- (void)siriSession:(id)session command:(id)command time:(double)time;
+- (id)commandResult:(id)command;
+@end
+
+@interface AxsAiSiriTestDelegate : NSObject <AFUISiriSessionDelegate>
+@property NSUInteger calls;
+@property (strong) id lastCommand;
+@property (strong) id lastCompletion;
+@end
+@implementation AxsAiSiriTestDelegate
+- (void)commandOnly:(id)command { self.calls++; self.lastCommand = command; }
+- (void)siriSession:(id)session command:(id)command { [self commandOnly:command]; }
+- (void)siriSession:(id)session receivedCommand:(id)command completion:(id)completion {
+    self.calls++;
+    self.lastCommand = command;
+    self.lastCompletion = completion;
+    if (completion) ((void (^)(void))completion)();
+}
+- (void)siriSession:(id)session command:(id)command context:(id)context completion:(id)completion {
+    [self siriSession:session receivedCommand:command completion:completion];
+}
+- (void)siriSession:(id)session command:(id)command time:(double)time { self.calls++; }
+- (id)commandResult:(id)command { return command; }
+- (void)undeclaredCommand:(id)command { self.calls++; }
+@end
+
+@interface AxsAiSiriTestChildDelegate : AxsAiSiriTestDelegate
+@end
+@implementation AxsAiSiriTestChildDelegate
+@end
+
+static void AxsAiSiriTestInstall(Class cls, SEL selector, IMP replacement, IMP *original) {
+    Method method = class_getInstanceMethod(cls, selector);
+    *original = method_getImplementation(method);
+    class_replaceMethod(cls, selector, replacement, method_getTypeEncoding(method));
+    AxsAiSiriTestDelegateHooks++;
+}
 
 // ACE-shaped fixtures use only selectors declared by the supplied 16.5 headers.
 @interface AxsAiSiriTestACENode : NSObject
@@ -116,6 +166,9 @@ static AxsAiSiriTestACENode *AxsAiSiriACEResult(NSArray *phrases) {
 - (void)assistantConnectionDismissAssistant:(id)connection { [self end]; }
 - (void)end { [[AxsAiSiriProbeManager shared] endSession:self]; }
 - (void)endForReason:(long long)reason { [self end]; }
+- (id)delegate { return nil; }
+- (id)localDelegate { return nil; }
+- (void)_performBlockWithDelegate:(id)block {}
 - (void)assistantConnection:(id)connection receivedCommand:(id)command completion:(id)completion {
     [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:nil time:NAN source:@"received-command"];
 }
@@ -160,7 +213,10 @@ static void AxsAiSiriWait(BOOL (^predicate)(void), NSString *message) {
 static AFUISiriSession *AxsAiSiriNewSession(void) {
     [[AxsAiSiriProbeManager shared] preferencesChanged];
     @synchronized (AxsAiSiriConfig.class) { AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy]; }
-    @synchronized (AxsAiSiriTestEvents) { [AxsAiSiriTestEvents removeAllObjects]; }
+    @synchronized (AxsAiSiriTestEvents) {
+        [AxsAiSiriTestEvents removeAllObjects];
+        [AxsAiSiriTestEventDetails removeAllObjects];
+    }
     AFUISiriSession *session = [AFUISiriSession new];
     [session assistantConnectionRequestWillStart:nil];
     return session;
@@ -432,10 +488,75 @@ static void AxsAiSiriTestOptInCapture(void) {
     [session end];
 }
 
+static void AxsAiSiriTestDelegateRoutes(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriTestDelegate *delegate = [AxsAiSiriTestDelegate new];
+    IMP scalar = class_getMethodImplementation(delegate.class, @selector(siriSession:command:time:));
+    IMP result = class_getMethodImplementation(delegate.class, @selector(commandResult:));
+    IMP undeclared = class_getMethodImplementation(delegate.class, @selector(undeclaredCommand:));
+    AxsAiSiriPrepareDelegateProbe(delegate, @"delegate", AxsAiSiriTestInstall);
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"delegate-inventory"); }, @"delegate inventory recorded");
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 4, @"hook only declared void object signatures of arities 1-4");
+    AxsAiSiriCheck(scalar == class_getMethodImplementation(delegate.class, @selector(siriSession:command:time:)),
+        @"scalar signature is not replaced");
+    AxsAiSiriCheck(result == class_getMethodImplementation(delegate.class, @selector(commandResult:)),
+        @"nonvoid signature is not replaced");
+    AxsAiSiriCheck(undeclared == class_getMethodImplementation(delegate.class, @selector(undeclaredCommand:)),
+        @"undeclared candidate is not replaced");
+    AxsAiSiriPrepareDelegateProbe(delegate, @"delegate", AxsAiSiriTestInstall);
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 4, @"delegate methods installed only once");
+    SAUIAddViews *command = [SAUIAddViews addViews];
+    __block NSUInteger completions = 0;
+    id completion = [^{ completions++; } copy];
+    [delegate siriSession:session receivedCommand:command completion:completion];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"delegate-command-path"); }, @"actual delegate forwarding recorded");
+    AxsAiSiriCheck(delegate.calls == 1 && completions == 1, @"native callback and completion run exactly once");
+    AxsAiSiriCheck(delegate.lastCommand == command && delegate.lastCompletion == completion, @"original argument identities retained");
+    NSDictionary *details;
+    @synchronized (AxsAiSiriTestEvents) { details = AxsAiSiriTestEventDetails[@"delegate-command-path"]; }
+    AxsAiSiriCheck([details[@"hasAddViews"] boolValue], @"delegate identifies addViews without content");
+    AxsAiSiriCheck([details[@"selector"] isEqual:@"siriSession:receivedCommand:completion:"], @"actual selector reported");
+    AxsAiSiriCheck([details[@"argumentClasses"] count] == 3, @"only actual arguments are reported");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"delegate tracing cannot submit a guessed reply");
+    [delegate commandOnly:command];
+    [delegate siriSession:session command:command];
+    [delegate siriSession:session command:command context:nil completion:nil];
+    AxsAiSiriCheck(delegate.calls == 4, @"all object callback arities preserve dispatch");
+    [delegate siriSession:session command:command time:12.5];
+    AxsAiSiriCheck([delegate commandResult:command] == command, @"unsupported return ABI left untouched");
+    [[AxsAiSiriProbeManager shared] observeDelegateDispatchForSession:session];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"delegate-dispatch"); }, @"delegate dispatch marker recorded");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@NO forPreferenceKey:@"enabled"];
+    AxsAiSiriPrepareDelegateProbe(delegate, @"delegate", AxsAiSiriTestInstall);
+    [delegate siriSession:session receivedCommand:command completion:completion];
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(!AxsAiSiriHasEvent(@"delegate-inventory") && !AxsAiSiriHasEvent(@"delegate-command-path"),
+        @"disabled delegate diagnostics are silent");
+    AxsAiSiriCheck(completions == 2, @"disabled diagnostics still forward completion");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    IMP parent = class_getMethodImplementation(delegate.class, @selector(commandOnly:));
+    AxsAiSiriTestChildDelegate *child = [AxsAiSiriTestChildDelegate new];
+    AxsAiSiriPrepareDelegateProbe(child, @"delegate", AxsAiSiriTestInstall);
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 8, @"inherited callbacks receive concrete subclass hooks");
+    AxsAiSiriCheck(parent == class_getMethodImplementation(delegate.class, @selector(commandOnly:)),
+        @"subclass setup does not replace the superclass method");
+    [child commandOnly:command];
+    AxsAiSiriCheck(child.calls == 1 && child.lastCommand == command, @"inherited original chain runs once");
+    AxsAiSiriPrepareDelegateProbe([NSObject new], @"delegate", AxsAiSiriTestInstall);
+    AxsAiSiriCheck(AxsAiSiriTestDelegateHooks == 8, @"root NSObject cannot be instrumented");
+    [session end];
+}
+
 int main(void) {
     @autoreleasepool {
         AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy];
         AxsAiSiriTestEvents = [NSMutableArray array];
+        AxsAiSiriTestEventDetails = [NSMutableDictionary dictionary];
         AxsAiSiriTestTriggers();
         AxsAiSiriTestACEExtraction();
         AxsAiSiriTestSubmission();
@@ -443,6 +564,7 @@ int main(void) {
         AxsAiSiriTestCommandPaths();
         AxsAiSiriTestRejection();
         AxsAiSiriTestOptInCapture();
+        AxsAiSiriTestDelegateRoutes();
         NSLog(@"PASS: %lu checks", (unsigned long)AxsAiSiriChecks);
     }
     return 0;

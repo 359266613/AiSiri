@@ -70,6 +70,20 @@ Assert-Project ($hook -match '%group AxsAiSiriInternalProbe') 'Internal executio
 Assert-Project ($hook -match '%group AxsAiSiriBatchProbe') 'Batch execution needs an independent optional hook.'
 Assert-Project ($hook -match 'turn:nil time:NAN source:@"received-command"') 'Reception must not fabricate execution metadata.'
 Assert-Project ($hook -match 'class_getInstanceMethod\(cls, @selector\(_performAceCommand:turnIdentifier:machAbsoluteTime:conflictHandler:\)\)') 'Internal execution must be guarded.'
+Assert-Project ($hook -match '%group AxsAiSiriDelegateDispatchProbe') 'Delegate dispatch needs an independent optional hook.'
+Assert-Project ($hook -match '#import <substrate.h>') 'The delegate installer must have its declaration before use.'
+Assert-Project ($hook -notmatch '\(\s*\^\s*\)\s*\(id\).*block') 'Do not guess the private delegate block ABI.'
+
+$delegateProbe = Read-Project 'Sources/AxsAiSiriDelegateProbe.m'
+Assert-Project ($delegateProbe -match 'protocol_copyMethodDescriptionList') 'Delegate signatures must be discovered from runtime protocols.'
+Assert-Project ($delegateProbe -match 'signature.methodReturnType, @encode\(void\)') 'Delegate return ABI must be checked.'
+Assert-Project ($delegateProbe -match 'getArgumentTypeAtIndex:i\]\[0\] != ''@''') 'Delegate argument ABI must be checked.'
+Assert-Project ($delegateProbe -match 'declared && compatible && !installed') 'Only compatible protocol-declared callbacks may be hooked.'
+Assert-Project ($delegateProbe -match 'install\(cls, selector, replacement, &original\)') 'Only the observed concrete delegate class may be hooked.'
+Assert-Project ($delegateProbe -match 'hooked.count < 24') 'Delegate hook count must be bounded.'
+Assert-Project ($delegateProbe -notmatch 'objc_msgSend|NSInvocation|performSelector:') 'Do not invoke private candidates speculatively.'
+Assert-Project ($makefile -match 'Sources/AxsAiSiriDelegateProbe.m') 'Delegate probe must be compiled.'
+Assert-Project ((Read-Project 'Sources/AxsAiSiriDelegateProbe.h') -match 'FOUNDATION_EXPORT void AxsAiSiriPrepareDelegateProbe') 'Delegate entry point needs C linkage from Logos Objective-C++.'
 
 $manager = Read-Project 'Sources/AxsAiSiriProbeManager.m'
 Assert-Project ($manager -match 'if \(!config.enabled\) return;') 'Enabled guard missing.'
@@ -90,6 +104,7 @@ $sources = @(
     'Sources/AxsAiSiriDiagnostics.m',
     'Sources/AxsAiSiriProbeManager.m',
     'Sources/AxsAiSiriTrigger.m',
+    'Sources/AxsAiSiriDelegateProbe.m',
     'AiSiriprefs/AxsAiSiriRootListController.m'
 )
 foreach ($relative in $sources) {

@@ -1,4 +1,4 @@
-AiSiri local probe / prefix-diagnostics-v2
+AiSiri local probe / command-path-diagnostics-v3
 
 [SpringBoard.plist]
 (
@@ -8,70 +8,45 @@ AiSiri local probe / prefix-diagnostics-v2
             system = "Version 16.5 (Build 20F66)";
         };
         event = "probe-loaded";
-        pid = 10716;
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514120.858398";
+        time = "1792515162.504277";
+    },
+        {
+        details =         {
+            path = "received-command";
+        };
+        event = "command-hook-installed";
+        pid = 10867;
+        process = SpringBoard;
+        time = "1792515165.921284";
+    },
+        {
+        details =         {
+            path = "internal-execute";
+        };
+        event = "command-hook-installed";
+        pid = 10867;
+        process = SpringBoard;
+        time = "1792515165.921293";
+    },
+        {
+        details =         {
+            path = "batch-execute";
+        };
+        event = "command-hook-installed";
+        pid = 10867;
+        process = SpringBoard;
+        time = "1792515165.921297";
     },
         {
         details =         {
             class = AFUISiriSession;
         };
         event = "hooks-installed";
-        pid = 10716;
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514123.568915";
-    },
-        {
-        details =         {
-            characters = 6;
-            class = SASSpeechRecognized;
-            configuredPrefix = "\U6d4b\U8bd5\U56de\U7b54";
-            path = "ace-first-interpretation";
-            prefixMatched = 0;
-            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
-        };
-        event = "final-recognition";
-        pid = 10716;
-        process = SpringBoard;
-        time = "1792514141.326302";
-    },
-        {
-        details =         {
-            captureRequest = "1792514252.194923";
-            configuredPrefix = "\U6d4b\U8bd5\U56de\U7b54";
-            prefixMatched = 0;
-            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
-        };
-        event = "opt-in-test-transcript";
-        pid = 10716;
-        process = SpringBoard;
-        time = "1792514141.326368";
-    },
-        {
-        details =         {
-            characters = 4;
-            class = SASSpeechRecognized;
-            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
-            path = "ace-first-interpretation";
-            prefixMatched = 0;
-            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
-        };
-        event = "final-recognition";
-        pid = 10716;
-        process = SpringBoard;
-        time = "1792514246.0679";
-    },
-        {
-        details =         {
-            captureRequest = "1792514357.709145";
-            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
-            prefixMatched = 0;
-            testText = "\U8fd9\U662f\U4f60\U597d";
-        };
-        event = "opt-in-test-transcript";
-        pid = 10716;
-        process = SpringBoard;
-        time = "1792514246.067964";
+        time = "1792515165.921316";
     },
         {
         details =         {
@@ -83,85 +58,71 @@ AiSiri local probe / prefix-diagnostics-v2
             prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
         };
         event = "final-recognition";
-        pid = 10716;
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514266.917709";
+        time = "1792515184.141474";
     },
         {
         details =         {
-            captureRequest = "1792514380.068488";
+            captureRequest = "1792515296.777219";
             configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
             prefixMatched = 1;
             testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
         };
         event = "opt-in-test-transcript";
-        pid = 10716;
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514266.917789";
+        time = "1792515184.142069";
     },
         {
         details =         {
-            characters = 6;
-            class = SASSpeechRecognized;
-            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
-            path = "ace-first-interpretation";
-            prefixMatched = 1;
-            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+            class = SAUIAddViews;
+            hasTurn = 0;
+            isAddViews = 1;
+            path = "received-command";
+            timeValid = 0;
         };
-        event = "final-recognition";
-        pid = 10716;
+        event = "native-command-path";
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514389.465814";
+        time = "1792515184.142346";
     },
         {
         details =         {
-            captureRequest = "1792514502.766567";
-            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
-            prefixMatched = 1;
-            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
+            class = SAUIShowRequestHandlingStatus;
+            hasTurn = 0;
+            isAddViews = 0;
+            path = "received-command";
+            timeValid = 0;
         };
-        event = "opt-in-test-transcript";
-        pid = 10716;
+        event = "native-command-path";
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514389.465925";
+        time = "1792515184.175544";
     },
         {
         details =         {
-            characters = 6;
-            class = SASSpeechRecognized;
-            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
-            path = "ace-first-interpretation";
-            prefixMatched = 1;
-            prefixSource = "/var/jb/var/mobile/Library/Preferences/com.axs.aisiri.plist";
+            commandPathsSeen = 2;
+            nativeContextAvailable = 0;
+            nativeTimeValid = 0;
+            nativeTurnAvailable = 0;
+            nativeViewsSeen = 1;
         };
-        event = "final-recognition";
-        pid = 10716;
+        event = "probe-timeout";
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514417.700947";
-    },
-        {
-        details =         {
-            captureRequest = "1792514531.134171";
-            configuredPrefix = "\U8fd9\U662f\U56de\U7b54";
-            prefixMatched = 1;
-            testText = "\U8fd9\U662f\U56de\U7b54\U4f60\U597d";
-        };
-        event = "opt-in-test-transcript";
-        pid = 10716;
-        process = SpringBoard;
-        time = "1792514417.701039";
+        time = "1792515192.147566";
     },
         {
         details =         {
             nativeContextAvailable = 0;
-            nativeTimeValid = 0;
-            nativeTurnAvailable = 0;
-            nativeViewsSeen = 0;
+            nativeViewsSeen = 1;
+            replyPending = 0;
         };
-        event = "probe-timeout";
-        pid = 10716;
+        event = "probe-session-ended";
+        pid = 10867;
         process = SpringBoard;
-        time = "1792514425.707065";
+        time = "1792515210.440845";
     }
 )
 

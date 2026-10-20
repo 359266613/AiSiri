@@ -30,6 +30,7 @@ static char AxsAiSiriSyntheticCommandKey;
 @property NSUInteger preferenceEpoch;
 @property (strong) NSMutableSet<NSString *> *commandPaths;
 @property (copy) NSString *contextSource;
+@property BOOL delegateDispatchSeen;
 @end
 @implementation AxsAiSiriProbeState
 @end
@@ -50,6 +51,9 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
 @property NSUInteger epoch;
 // Accessed only on worker; each explicit, time-limited capture is consumed once.
 @property NSTimeInterval axsAiSiriConsumedCapture;
+// Metadata-only deduplication, confined to worker.
+@property (strong) NSMutableSet<NSString *> *delegateInventoryKeys;
+@property (strong) NSMutableSet<NSString *> *delegateCallbackKeys;
 @end
 
 @implementation AxsAiSiriProbeManager
@@ -66,6 +70,65 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
 #pragma mark - Lifecycle invalidation
 - (void)preferencesChanged {
     @synchronized (self) { self.epoch++; }
+    dispatch_async(self.worker, ^{
+        [self.delegateInventoryKeys removeAllObjects];
+        [self.delegateCallbackKeys removeAllObjects];
+    });
+}
+
+#pragma mark - Delegate route diagnostics, no guessed submission
+- (void)recordDelegateInventory:(NSDictionary *)details {
+    if (!details) return;
+    dispatch_async(self.worker, ^{
+        if (![AxsAiSiriConfig new].enabled) return;
+        if (!self.delegateInventoryKeys) self.delegateInventoryKeys = [NSMutableSet set];
+        NSString *key = [NSString stringWithFormat:@"%@/%@/%@", details[@"role"], details[@"class"], details[@"exception"]];
+        if ([self.delegateInventoryKeys containsObject:key] || self.delegateInventoryKeys.count >= 8) return;
+        [self.delegateInventoryKeys addObject:key];
+        AxsAiSiriRecord(@"delegate-inventory", details);
+    });
+}
+
+- (void)observeDelegateDispatchForSession:(id)session {
+    @synchronized (session) {
+        AxsAiSiriProbeState *state = AxsAiSiriState(session);
+        if (!state.active || state.delegateDispatchSeen) return;
+        state.delegateDispatchSeen = YES;
+    }
+    dispatch_async(self.worker, ^{
+        if ([AxsAiSiriConfig new].enabled) AxsAiSiriRecord(@"delegate-dispatch", @{});
+    });
+}
+
+- (void)observeDelegate:(id)delegate selector:(NSString *)selector arguments:(NSArray *)arguments {
+    NSMutableArray *classes = [NSMutableArray array];
+    BOOL hasViews = NO;
+    Class viewsClass = NSClassFromString(@"SAUIAddViews");
+    for (id argument in arguments) {
+        if (argument == NSNull.null) {
+            [classes addObject:@"nil"];
+            continue;
+        }
+        // Do not retain argument objects or completion blocks on the worker.
+        [classes addObject:NSStringFromClass(object_getClass(argument))];
+        if (viewsClass && [argument isKindOfClass:viewsClass]) {
+            if (objc_getAssociatedObject(argument, &AxsAiSiriSyntheticCommandKey)) return;
+            hasViews = YES;
+        }
+    }
+    NSDictionary *details = @{
+        @"class": NSStringFromClass(object_getClass(delegate)), @"selector": selector,
+        @"argumentClasses": [classes copy], @"hasAddViews": @(hasViews),
+        @"mainThread": @(NSThread.isMainThread)
+    };
+    dispatch_async(self.worker, ^{
+        if (![AxsAiSiriConfig new].enabled) return;
+        if (!self.delegateCallbackKeys) self.delegateCallbackKeys = [NSMutableSet set];
+        NSString *key = [NSString stringWithFormat:@"%@/%@/%d", details[@"class"], selector, hasViews];
+        if ([self.delegateCallbackKeys containsObject:key] || self.delegateCallbackKeys.count >= 24) return;
+        [self.delegateCallbackKeys addObject:key];
+        AxsAiSiriRecord(@"delegate-command-path", details);
+    });
 }
 
 - (void)beginSession:(id)session {
@@ -181,6 +244,7 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
                         @"nativeViewsSeen": @(state.nativeViewsSeen),
                         @"nativeTurnAvailable": @(state.nativeTurnAvailable),
                         @"nativeTimeValid": @(state.nativeTimeValid),
+                        @"delegateDispatchSeen": @(state.delegateDispatchSeen),
                         @"commandPathsSeen": @(state.commandPaths.count)
                     });
                 }

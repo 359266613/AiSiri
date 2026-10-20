@@ -41,6 +41,9 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Test Local Probe
+      run: bash Tests/run-macos.sh
+
     - name: Setup Environment
       run: |
         echo "$THEOS/bin" >> "$GITHUB_PATH"

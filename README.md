@@ -15,6 +15,9 @@
 - 拿不到原生上下文时最多等待 8 秒，然后放弃并记录原因。
 - 监听公开执行、命令接收、内部执行及批量执行路径；接收与批量入口仅用于诊断，
   不会猜测 turn 或时间，内部执行入口观察到完整原生参数后才可用于投递。
+- 从会话的 `delegate` / `localDelegate` 读取运行时类名及命令方法；
+  仅监听协议声明且签名兼容的对象参数回调，原始参数和 completion 原样转发。
+  此阶段 delegate 监听仅诊断，不向尚未验证的入口投递回答。
 - 播报默认关闭；开启后只设置 `speakableText`，是否实际播报需要真机确认。
 - 关闭 Siri、开始新请求或修改设置会使旧测试结果失效。
 - 默认不将识别原文、回答原文、音频、会话标识或密钥写入日志。
@@ -35,6 +38,7 @@ Sources/AxsAiSiriTranscript.m        AFSpeechRecognition / ACE 识别文本提�
 Sources/AxsAiSiriConfig.m            共享设置读写
 Sources/AxsAiSiriJailbreakPath.h      用户数据路径解析
 Sources/AxsAiSiriDiagnostics.m       本地有限长度诊断与统一日志
+Sources/AxsAiSiriDelegateProbe.m     delegate 方法发现、签名校验与定向监听
 AiSiriprefs/                    PreferenceLoader 设置面板
 layout/                        面板注册入口
 Tests/                         静态检查与 macOS Objective-C 测试
@@ -100,6 +104,9 @@ Windows 可先运行工程静态检查：
 | `hook-method-missing` | 方法声明与运行时不匹配，未安装整组 hook |
 | `command-hook-installed` / `command-hook-unavailable` | 新增命令路径已安装或不存在，不影响核心 hook |
 | `native-command-path` | 命令路径与类名，每轮最多 16 种组合，不记录命令内容 |
+| `delegate-inventory` | delegate 类名、协议候选方法、类型编码及是否安装监听 |
+| `delegate-dispatch` | 本轮经过 `_performBlockWithDelegate:`，不包装或调用其 block |
+| `delegate-command-path` | 实际 delegate 回调、参数类名及是否含 `SAUIAddViews` |
 | `final-recognition` | 已收到可读取的最终结果，记录长度和前缀是否匹配 |
 | `unsupported-recognition` | 实际对象既不提供直接转写，也不提供 ACE recognition 入口 |
 | `invalid-transcript` | 转写为空、ACE 结构不完整或超过长度限制 |
@@ -116,11 +123,17 @@ Windows 可先运行工程静态检查：
 子系统为 `com.axs.aisiri`；面板无法读取统一日志，需用设备日志工具查看。
 日志文件可能保留上次启动的信息，反馈时注意时间与 PID。
 
-命令路径诊断版的复制标题为 `command-path-diagnostics-v3`。更新后保持现有前缀，
+delegate 路径诊断版的复制标题为 `delegate-path-diagnostics-v4`。更新后保持现有前缀，
 重新唤起 Siri 并测试一次，等待至少 10 秒再复制诊断。
 `native-command-path` 的 `path` 区分 `received-command`、`public-execute`、
 `internal-execute` 和 `batch-execute`；`answer-submitted.contextSource`
 记录实际复用上下文的路径。看到命令接收不等于已经拿到可投递的上下文。
+
+`delegate-inventory.methods` 的 `protocolDeclared`、`signatureSupported` 和
+`hookInstalled` 区分「协议确认」「签名兼容」「已监听」。
+仅支持返回 `void`、1 至 4 个对象参数的协议命令回调；其他方法只报告，不猜测 ABI。
+不记录参数内容、对象地址或会话标识。每个进程最多发现 8 个角色/类组合、
+安装 24 个回调监听；清单与回调摘要按设置周期去重，仍受 120 条日志总上限约束。
 
 ## 已知边界
 

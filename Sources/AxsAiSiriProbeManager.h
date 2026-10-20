@@ -9,4 +9,7 @@
 - (void)observeCommand:(id)command session:(id)session turn:(id)turn time:(double)time;
 - (void)observeCommand:(id)command session:(id)session turn:(id)turn time:(double)time source:(NSString *)source;
 - (void)preferencesChanged;
+- (void)recordDelegateInventory:(NSDictionary *)details;
+- (void)observeDelegate:(id)delegate selector:(NSString *)selector arguments:(NSArray *)arguments;
+- (void)observeDelegateDispatchForSession:(id)session;
 @end

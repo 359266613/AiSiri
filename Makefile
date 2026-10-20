@@ -8,7 +8,7 @@ THEOS_PACKAGE_SCHEME = rootless
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = AiSiri
-AiSiri_FILES = Hooks/AxsAiSiriSessionHooks.xm Sources/AxsAiSiriConfig.m Sources/AxsAiSiriDiagnostics.m Sources/AxsAiSiriProbeManager.m Sources/AxsAiSiriTrigger.m Sources/AxsAiSiriTranscript.m
+AiSiri_FILES = Hooks/AxsAiSiriSessionHooks.xm Sources/AxsAiSiriConfig.m Sources/AxsAiSiriDiagnostics.m Sources/AxsAiSiriProbeManager.m Sources/AxsAiSiriTrigger.m Sources/AxsAiSiriTranscript.m Sources/AxsAiSiriDelegateProbe.m
 AiSiri_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -I./Headers -I./Sources
 AiSiri_CCFLAGS = -std=c++17
 AiSiri_FRAMEWORKS = Foundation

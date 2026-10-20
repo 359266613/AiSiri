@@ -12,6 +12,9 @@
 - (void)assistantConnection:(id)connection receivedCommand:(id)command completion:(id)completion;
 - (void)_performAceCommand:(id)command turnIdentifier:(id)identifier machAbsoluteTime:(double)time conflictHandler:(id)handler;
 - (void)_performAceCommands:(id)commands;
+- (id)delegate;
+- (id)localDelegate;
+- (void)_performBlockWithDelegate:(id)block;
 @end
 
 @interface AFSpeechRecognition : NSObject
