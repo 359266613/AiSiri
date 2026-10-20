@@ -25,7 +25,7 @@ BOOL AxsMatchesTrigger(NSString *transcript, NSString *prefix) {
     BOOL asciiWord = (end >= 'a' && end <= 'z') || (end >= '0' && end <= '9');
     BOOL nextWord = (next >= 'a' && next <= 'z') || (next >= '0' && next <= '9');
     if (asciiWord && nextWord) return NO;
-    NSMutableCharacterSet *separators = [NSCharacterSet punctuationCharacterSet mutableCopy];
+    NSMutableCharacterSet *separators = [[NSCharacterSet punctuationCharacterSet] mutableCopy];
     [separators formUnionWithCharacterSet:spaces];
     return [[actual substringFromIndex:index] stringByTrimmingCharactersInSet:separators].length > 0;
 }
