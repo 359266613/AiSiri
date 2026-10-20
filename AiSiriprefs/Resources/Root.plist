@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>title</key><string>AiSiri</string>
+    <key>items</key>
+    <array>
+        <dict>
+            <key>cell</key><string>PSGroupCell</string>
+            <key>label</key><string>&#x672C;&#x5730;&#x9A8C;&#x8BC1;</string>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSSwitchCell</string>
+            <key>label</key><string>&#x542F;&#x7528;&#x9A8C;&#x8BC1;</string>
+            <key>defaults</key><string>com.axs.aisiri</string>
+            <key>key</key><string>enabled</string>
+            <key>default</key><false/>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSEditTextCell</string>
+            <key>label</key><string>&#x89E6;&#x53D1;&#x524D;&#x7F00;</string>
+            <key>defaults</key><string>com.axs.aisiri</string>
+            <key>key</key><string>prefix</string>
+            <key>default</key><string>&#x95EE;AI</string>
+            <key>autocorrectionType</key><integer>1</integer>
+            <key>autoCapitalizationType</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSEditTextCell</string>
+            <key>label</key><string>&#x56FA;&#x5B9A;&#x56DE;&#x7B54;</string>
+            <key>defaults</key><string>com.axs.aisiri</string>
+            <key>key</key><string>reply</string>
+            <key>default</key><string>AiSiri &#x672C;&#x5730;&#x6D4B;&#x8BD5;&#x56DE;&#x7B54;&#x3002;&#x8FD9;&#x4E0D;&#x662F; OpenAI &#x751F;&#x6210;&#x7684;&#x5185;&#x5BB9;&#x3002;</string>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSSwitchCell</string>
+            <key>label</key><string>&#x64AD;&#x62A5;&#xFF08;&#x5B9E;&#x9A8C;&#x6027;&#xFF09;</string>
+            <key>defaults</key><string>com.axs.aisiri</string>
+            <key>key</key><string>speakReply</string>
+            <key>default</key><false/>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSGroupCell</string>
+            <key>label</key><string>&#x8BCA;&#x65AD;</string>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSButtonCell</string>
+            <key>label</key><string>&#x590D;&#x5236;&#x8BCA;&#x65AD;</string>
+            <key>action</key><string>axsCopyDiagnostics</string>
+        </dict>
+    </array>
+</dict>
+</plist>

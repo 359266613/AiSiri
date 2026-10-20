@@ -1,0 +1,260 @@
+#import "AxsProbeManager.h"
+#import "AxsPrivate.h"
+#import "AxsConfig.h"
+#import "AxsDiagnostics.h"
+#import "AxsTrigger.h"
+#import <objc/runtime.h>
+#include <math.h>
+
+static char AxsStateKey;
+static char AxsSyntheticCommandKey;
+
+@interface AxsProbeState : NSObject
+@property NSUInteger generation;
+@property BOOL active;
+@property BOOL finalSeen;
+@property BOOL contextReady;
+@property BOOL nativeViewsSeen;
+@property BOOL nativeTurnAvailable;
+@property BOOL nativeTimeValid;
+@property BOOL published;
+@property BOOL speak;
+@property (copy) NSString *reply;
+@property (strong) id turn;
+@property double commandTime;
+@property (copy) NSString *refId;
+@property (copy) NSString *displayTarget;
+@property (copy) NSString *dialogPhase;
+@property (copy) NSString *responseMode;
+@property NSUInteger preferenceEpoch;
+@end
+@implementation AxsProbeState
+@end
+
+static AxsProbeState *AxsState(id session) {
+    // Caller holds the recursive session monitor.
+    AxsProbeState *state = objc_getAssociatedObject(session, &AxsStateKey);
+    if (!state) {
+        state = [AxsProbeState new];
+        state.active = YES;
+        objc_setAssociatedObject(session, &AxsStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return state;
+}
+
+@interface AxsProbeManager ()
+@property (strong) dispatch_queue_t worker;
+@property NSUInteger epoch;
+@end
+
+@implementation AxsProbeManager
++ (instancetype)shared {
+    static AxsProbeManager *manager;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        manager = [self new];
+        manager.worker = dispatch_queue_create("com.axs.aisiri.probe", DISPATCH_QUEUE_SERIAL);
+    });
+    return manager;
+}
+
+#pragma mark - Lifecycle invalidation
+- (void)preferencesChanged {
+    @synchronized (self) { self.epoch++; }
+}
+
+- (void)beginSession:(id)session {
+    @synchronized (session) {
+        AxsProbeState *old = AxsState(session);
+        AxsProbeState *fresh = [AxsProbeState new];
+        fresh.active = YES;
+        fresh.generation = old.generation + 1;
+        objc_setAssociatedObject(session, &AxsStateKey, fresh, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+- (void)endSession:(id)session {
+    @synchronized (session) {
+        AxsProbeState *state = AxsState(session);
+        state.active = NO;
+        state.generation++;
+        state.reply = nil;
+        state.turn = nil;
+    }
+}
+
+#pragma mark - Final recognition, never partial results
+- (void)observeRecognition:(id)recognition session:(id)session {
+    NSUInteger generation;
+    @synchronized (session) {
+        AxsProbeState *state = AxsState(session);
+        if (!state.active || state.finalSeen) return;
+        state.finalSeen = YES;
+        generation = state.generation;
+    }
+    NSUInteger epoch;
+    @synchronized (self) { epoch = self.epoch; }
+    __weak id weakSession = session;
+    dispatch_async(self.worker, ^{
+        @autoreleasepool {
+            AxsConfig *config = [AxsConfig new];
+            if (!config.enabled) return;
+            NSString *className = recognition ? NSStringFromClass([recognition class]) : @"nil";
+            if (![recognition respondsToSelector:@selector(oneBestTranscript)]) {
+                AxsRecord(@"unsupported-recognition", @{@"class": className});
+                return;
+            }
+            NSString *transcript;
+            @try { transcript = [(AFSpeechRecognition *)recognition oneBestTranscript]; }
+            @catch (NSException *exception) {
+                AxsRecord(@"transcript-exception", @{@"name": exception.name});
+                return;
+            }
+            if (![transcript isKindOfClass:NSString.class]) {
+                AxsRecord(@"invalid-transcript", @{@"class": className});
+                return;
+            }
+            BOOL match = AxsMatchesTrigger(transcript, config.prefix);
+            AxsRecord(@"final-recognition", @{
+                @"class": className, @"characters": @(transcript.length), @"prefixMatched": @(match)
+            });
+            if (!match) return;
+            NSString *reply = [config.reply stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (!reply.length || reply.length > 512) {
+                AxsRecord(@"invalid-reply", @{@"characters": @(reply.length)});
+                return;
+            }
+            BOOL speak = config.speakReply;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                id target = weakSession;
+                if (!target) return;
+                @synchronized (target) {
+                    AxsProbeState *state = AxsState(target);
+                    if (!state.active || state.generation != generation) return;
+                    state.reply = reply;
+                    state.speak = speak;
+                    state.preferenceEpoch = epoch;
+                }
+                [self tryPresentForSession:target];
+            });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC),
+                           dispatch_get_main_queue(), ^{
+                id target = weakSession;
+                if (!target) return;
+                @synchronized (target) {
+                    AxsProbeState *state = AxsState(target);
+                    if (!state.active || state.generation != generation || state.published || !state.reply) return;
+                    state.reply = nil;
+                    AxsRecord(@"probe-timeout", @{
+                        @"nativeContextAvailable": @(state.contextReady),
+                        @"nativeViewsSeen": @(state.nativeViewsSeen),
+                        @"nativeTurnAvailable": @(state.nativeTurnAvailable),
+                        @"nativeTimeValid": @(state.nativeTimeValid)
+                    });
+                }
+            });
+        }
+    });
+}
+
+#pragma mark - Reuse observed native ACE metadata
+- (void)observeCommand:(id)command session:(id)session turn:(id)turn time:(double)time {
+    if (objc_getAssociatedObject(command, &AxsSyntheticCommandKey)) return;
+    Class addViewsClass = NSClassFromString(@"SAUIAddViews");
+    if (!addViewsClass || ![command isKindOfClass:addViewsClass]) return;
+    @synchronized (session) {
+        AxsProbeState *state = AxsState(session);
+        if (!state.active) return;
+        state.nativeViewsSeen = YES;
+        state.nativeTurnAvailable = turn != nil;
+        state.nativeTimeValid = isfinite(time);
+        if (!turn || !isfinite(time)) return;
+        SAUIAddViews *views = command;
+        state.turn = turn;
+        state.commandTime = time;
+        state.contextReady = YES;
+        state.refId = views.refId;
+        state.displayTarget = views.displayTarget;
+        state.dialogPhase = views.dialogPhase;
+        state.responseMode = views.responseMode;
+    }
+    __weak id weakSession = session;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id target = weakSession;
+        if (target) [self tryPresentForSession:target];
+    });
+}
+
+- (void)tryPresentForSession:(AFUISiriSession *)session {
+    NSAssert(NSThread.isMainThread, @"ACE presentation must run on the main thread");
+    SAUIAddViews *command;
+    id turn;
+    double time = 0;
+    NSUInteger generation = 0;
+    NSUInteger epoch = 0;
+    NSDictionary *details;
+    @synchronized (session) {
+        AxsProbeState *state = AxsState(session);
+        if (!state.active || !state.reply || !state.contextReady || state.published) return;
+        @synchronized (self) {
+            if (state.preferenceEpoch != self.epoch) {
+                state.reply = nil;
+                return;
+            }
+        }
+        Class commandClass = NSClassFromString(@"SAUIAddViews");
+        Class utteranceClass = NSClassFromString(@"SAUIAssistantUtteranceView");
+        if (![commandClass respondsToSelector:@selector(addViews)] ||
+            ![utteranceClass respondsToSelector:@selector(assistantUtteranceView)] ||
+            ![session respondsToSelector:@selector(performAceCommand:turnIdentifier:machAbsoluteTime:)]) {
+            state.reply = nil;
+            AxsRecord(@"presentation-unavailable", @{});
+            return;
+        }
+        // Mark before calling Siri: the hook re-enters synchronously for our command.
+        state.published = YES;
+        @try {
+            SAUIAssistantUtteranceView *view = [(id)utteranceClass assistantUtteranceView];
+            view.viewId = NSUUID.UUID.UUIDString;
+            view.text = state.reply;
+            view.speakableText = state.speak ? state.reply : nil;
+            command = [(id)commandClass addViews];
+            command.aceId = NSUUID.UUID.UUIDString;
+            command.refId = state.refId;
+            command.displayTarget = state.displayTarget;
+            command.dialogPhase = state.dialogPhase;
+            command.responseMode = state.responseMode;
+            command.supplemental = YES;
+            command.requiresResponse = NO;
+            command.views = @[view];
+            objc_setAssociatedObject(command, &AxsSyntheticCommandKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            turn = state.turn;
+            time = state.commandTime;
+            generation = state.generation;
+            epoch = state.preferenceEpoch;
+            details = @{
+                @"speechRequested": @(state.speak),
+                @"hasRefId": @(state.refId.length > 0),
+                @"characters": @(state.reply.length)
+            };
+        } @catch (NSException *exception) {
+            AxsRecord(@"presentation-exception", @{@"name": exception.name});
+            command = nil;
+        }
+        state.reply = nil;
+    }
+    if (!command) return;
+    @synchronized (session) {
+        AxsProbeState *state = AxsState(session);
+        if (!state.active || state.generation != generation) return;
+    }
+    @synchronized (self) { if (epoch != self.epoch) return; }
+    // Do not hold our monitor across system code or delegate callbacks.
+    @try {
+        [session performAceCommand:command turnIdentifier:turn machAbsoluteTime:time];
+        AxsRecord(@"answer-submitted", details);
+    } @catch (NSException *exception) {
+        AxsRecord(@"presentation-exception", @{@"name": exception.name});
+    }
+}
+@end

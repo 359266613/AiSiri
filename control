@@ -1,0 +1,12 @@
+Package: com.axs.aisiri
+Name: AiSiri
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Siri recognition and native answer diagnostic probe.
+ Fixed local replies only. No model requests or API credentials.
+Maintainer: Axs
+Author: Axs
+Section: Axs-Tweaks
+Depends: mobilesubstrate, preferenceloader, firmware (>= 16.5), firmware (<< 16.6)
+Icon: https://axs66.github.io/pro/icon/aisiri.png
+Sileodepiction: https://axs66.github.io/pro/sileodepiction/aisiri/js.json
