@@ -23,8 +23,13 @@ void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
             if (!log) log = os_log_create("com.axs.aisiri", "probe");
             [entries addObject:entry];
             if (entries.count > 120) [entries removeObjectAtIndex:0];
-            os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "%{public}@ %{public}@",
-                             event, details.description ?: @"");
+            // Opt-in test text stays in the bounded local file, never the unified log.
+            if ([event isEqualToString:@"opt-in-test-transcript"]) {
+                os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "%{public}@", event);
+            } else {
+                os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "%{public}@ %{public}@",
+                                 event, details.description ?: @"");
+            }
             NSString *directory = AxsAiSiriDiagnosticDirectory();
             NSError *error;
             if (![[NSFileManager defaultManager] createDirectoryAtPath:directory
@@ -46,7 +51,7 @@ void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
 }
 
 NSString *AxsAiSiriReadDiagnostics(void) {
-    NSMutableString *output = [NSMutableString stringWithString:@"AiSiri local probe 1.0.0\n"];
+    NSMutableString *output = [NSMutableString stringWithString:@"AiSiri local probe / prefix-diagnostics-v2\n"];
     NSString *directory = AxsAiSiriDiagnosticDirectory();
     NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:directory error:NULL];
     for (NSString *name in [names sortedArrayUsingSelector:@selector(compare:)]) {

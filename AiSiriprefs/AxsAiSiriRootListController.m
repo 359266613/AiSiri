@@ -78,9 +78,32 @@
 }
 
 #pragma mark - Diagnostics
+- (void)axsAiSiriCaptureNextTest {
+    [self.view endEditing:YES];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"\u8bb0\u5f55\u4e0b\u4e00\u6b21\u6d4b\u8bd5\u6587\u672c"
+        message:@"\u786e\u8ba4\u540e\u4e24\u5206\u949f\u5185\uff0c\u4e0b\u4e00\u6b21 Siri \u8bc6\u522b\u539f\u6587\u4f1a\u5199\u5165\u672c\u5730\u8bca\u65ad\uff0c\u5e76\u5305\u542b\u5728\u590d\u5236\u5185\u5bb9\u4e2d\u3002\u8bf7\u53ea\u8bf4\u6d4b\u8bd5\u95ee\u53e5\uff0c\u4e0d\u8981\u8bf4\u9690\u79c1\u5185\u5bb9\u3002"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"\u53d6\u6d88" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"\u786e\u8ba4\u8bb0\u5f55" style:UIAlertActionStyleDefault
+        handler:^(UIAlertAction *action) {
+            dispatch_async(self.axsAiSiriQueue, ^{
+                BOOL success = [AxsAiSiriConfig setValue:@(NSDate.date.timeIntervalSince1970 + 120)
+                    forPreferenceKey:@"transcriptCaptureUntil"];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self axsAiSiriShowMessage:success ? @"\u5df2\u5f00\u542f\u5355\u6b21\u8bb0\u5f55"
+                                                      : @"\u65e0\u6cd5\u5f00\u542f\u8bb0\u5f55"];
+                });
+            });
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)axsAiSiriCopyDiagnostics {
+    [self.view endEditing:YES];
     dispatch_async(self.axsAiSiriQueue, ^{
-        NSString *text = AxsAiSiriReadDiagnostics();
+        NSString *text = [NSString stringWithFormat:@"%@\nPanel saved prefix: %@\nPrefix source: %@\n",
+            AxsAiSiriReadDiagnostics(), [AxsAiSiriConfig valueForKey:@"prefix"],
+            [AxsAiSiriConfig axsAiSiriSourceForPreferenceKey:@"prefix"]];
         dispatch_async(dispatch_get_main_queue(), ^{
             UIPasteboard.generalPasteboard.string = text;
             [self axsAiSiriShowMessage:@"\u8bca\u65ad\u5df2\u590d\u5236"];

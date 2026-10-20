@@ -12,4 +12,5 @@ FOUNDATION_EXPORT NSString *const AxsAiSiriPreferencesChanged;
 + (id)valueForKey:(NSString *)key;
 + (BOOL)setValue:(id)value forPreferenceKey:(NSString *)key;
 + (BOOL)registerDefaults;
++ (NSString *)axsAiSiriSourceForPreferenceKey:(NSString *)key;
 @end

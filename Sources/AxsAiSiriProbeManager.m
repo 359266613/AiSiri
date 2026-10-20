@@ -46,6 +46,8 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
 @interface AxsAiSiriProbeManager ()
 @property (strong) dispatch_queue_t worker;
 @property NSUInteger epoch;
+// Accessed only on worker; each explicit, time-limited capture is consumed once.
+@property NSTimeInterval axsAiSiriConsumedCapture;
 @end
 
 @implementation AxsAiSiriProbeManager
@@ -100,6 +102,8 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
         @autoreleasepool {
             AxsAiSiriConfig *config = [AxsAiSiriConfig new];
             if (!config.enabled) return;
+            NSString *prefix = config.prefix;
+            NSString *prefixSource = [AxsAiSiriConfig axsAiSiriSourceForPreferenceKey:@"prefix"];
             NSString *className = recognition ? NSStringFromClass([recognition class]) : @"nil";
             NSString *transcript;
             NSString *transcriptPath = nil;
@@ -114,11 +118,24 @@ static AxsAiSiriProbeState *AxsAiSiriState(id session) {
                     @{@"class": className, @"path": transcriptPath ?: @"unsupported"});
                 return;
             }
-            BOOL match = AxsAiSiriMatchesTrigger(transcript, config.prefix);
+            BOOL match = AxsAiSiriMatchesTrigger(transcript, prefix);
             AxsAiSiriRecord(@"final-recognition", @{
                 @"class": className, @"path": transcriptPath,
-                @"characters": @(transcript.length), @"prefixMatched": @(match)
+                @"characters": @(transcript.length), @"prefixMatched": @(match),
+                @"configuredPrefix": prefix, @"prefixSource": prefixSource
             });
+            // Only a panel-confirmed, unexpired request can persist the next test text.
+            id captureValue = [AxsAiSiriConfig valueForKey:@"transcriptCaptureUntil"];
+            NSTimeInterval captureUntil = [captureValue isKindOfClass:NSNumber.class] ? [captureValue doubleValue] : 0;
+            NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+            if (captureUntil > now && captureUntil <= now + 125 &&
+                captureUntil != self.axsAiSiriConsumedCapture) {
+                self.axsAiSiriConsumedCapture = captureUntil;
+                AxsAiSiriRecord(@"opt-in-test-transcript", @{
+                    @"testText": transcript, @"configuredPrefix": prefix,
+                    @"captureRequest": @(captureUntil), @"prefixMatched": @(match)
+                });
+            }
             if (!match) return;
             NSString *reply = [config.reply stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             if (!reply.length || reply.length > 512) {

@@ -45,6 +45,11 @@
         </dict>
         <dict>
             <key>cell</key><string>PSButtonCell</string>
+            <key>label</key><string>&#x8BB0;&#x5F55;&#x4E0B;&#x4E00;&#x6B21;&#x6D4B;&#x8BD5;&#x6587;&#x672C;</string>
+            <key>action</key><string>axsAiSiriCaptureNextTest</string>
+        </dict>
+        <dict>
+            <key>cell</key><string>PSButtonCell</string>
             <key>label</key><string>&#x590D;&#x5236;&#x8BCA;&#x65AD;</string>
             <key>action</key><string>axsAiSiriCopyDiagnostics</string>
         </dict>

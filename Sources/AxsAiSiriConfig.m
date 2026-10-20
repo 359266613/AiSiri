@@ -15,6 +15,7 @@ static NSUserDefaults *AxsAiSiriDefaults(void) {
     return @{
         @"enabled": @NO,
         @"speakReply": @NO,
+        @"transcriptCaptureUntil": @0,
         @"prefix": @"\u95eeAI",
         @"reply": @"AiSiri \u672c\u5730\u6d4b\u8bd5\u56de\u7b54\u3002"
                    "\u8fd9\u4e0d\u662f OpenAI \u751f\u6210\u7684\u5185\u5bb9\u3002"
@@ -27,6 +28,13 @@ static NSUserDefaults *AxsAiSiriDefaults(void) {
         if (value) return value;
     }
     return [AxsAiSiriDefaults() objectForKey:key] ?: [self defaults][key];
+}
+
++ (NSString *)axsAiSiriSourceForPreferenceKey:(NSString *)key {
+    for (NSString *path in AxsAiSiriPreferencesPaths()) {
+        if ([NSDictionary dictionaryWithContentsOfFile:path][key]) return path;
+    }
+    return [AxsAiSiriDefaults() objectForKey:key] ? @"NSUserDefaults" : @"built-in-default";
 }
 
 + (BOOL)setValue:(id)value forPreferenceKey:(NSString *)key {

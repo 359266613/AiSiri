@@ -32,6 +32,7 @@ static void AxsAiSiriCheck(BOOL condition, NSString *message) {
     return YES;
 }
 + (BOOL)registerDefaults { return YES; }
++ (NSString *)axsAiSiriSourceForPreferenceKey:(NSString *)key { return @"test-fixture"; }
 - (BOOL)enabled { return [[AxsAiSiriConfig valueForKey:@"enabled"] boolValue]; }
 - (BOOL)speakReply { return [[AxsAiSiriConfig valueForKey:@"speakReply"] boolValue]; }
 - (NSString *)prefix { return [AxsAiSiriConfig valueForKey:@"prefix"]; }
@@ -332,6 +333,41 @@ static void AxsAiSiriTestRejection(void) {
     [session end];
 }
 
+static void AxsAiSiriTestOptInCapture(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriRecognize(session, @"ordinary test");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"default diagnostic completed");
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(!AxsAiSiriHasEvent(@"opt-in-test-transcript"), @"no text capture by default");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@(NSDate.date.timeIntervalSince1970 + 120)
+        forPreferenceKey:@"transcriptCaptureUntil"];
+    AxsAiSiriRecognize(session, @"ordinary test");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"opt-in-test-transcript"); }, @"explicit capture works on unmatched question");
+    [session assistantConnectionRequestWillStart:nil];
+    AxsAiSiriRecognize(session, @"second test");
+    AxsAiSiriPump(0.08);
+    NSUInteger count = 0;
+    @synchronized (AxsAiSiriTestEvents) {
+        for (NSString *event in AxsAiSiriTestEvents) {
+            if ([event isEqual:@"opt-in-test-transcript"]) count++;
+        }
+    }
+    AxsAiSiriCheck(count == 1, @"capture consumed once per process");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@(NSDate.date.timeIntervalSince1970 - 1)
+        forPreferenceKey:@"transcriptCaptureUntil"];
+    AxsAiSiriRecognize(session, @"expired test");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"expired capture recognition");
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(!AxsAiSiriHasEvent(@"opt-in-test-transcript"), @"expired capture stays off");
+    [session end];
+}
+
 int main(void) {
     @autoreleasepool {
         AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy];
@@ -341,6 +377,7 @@ int main(void) {
         AxsAiSiriTestSubmission();
         AxsAiSiriTestCancellation();
         AxsAiSiriTestRejection();
+        AxsAiSiriTestOptInCapture();
         NSLog(@"PASS: %lu checks", (unsigned long)AxsAiSiriChecks);
     }
     return 0;
