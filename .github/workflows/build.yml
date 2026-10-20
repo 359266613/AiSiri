@@ -72,11 +72,6 @@ jobs:
           echo "iPhoneOS16.5.sdk already present"
           exit 0
         fi
-        # 不用 theos/bin/install-sdk：它会从 GitHub 拉压缩包，被限流／重定向时
-        # 会存下 HTML 错误页，tar 直接报 "Unrecognized archive format"。
-        # 直接从 theos/sdks 稀疏检出这个 SDK，确定性强且快得多。
-        # 必须装到 sdks/iPhoneOS16.5.sdk：notifyislandprefs 的 LDFLAGS 指向
-        # $(THEOS)/sdks/iPhoneOS16.5.sdk/System/Library/PrivateFrameworks（Preferences）。
         rm -rf /tmp/theos-sdks
         git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/theos-sdks
         git -C /tmp/theos-sdks sparse-checkout set iPhoneOS16.5.sdk
