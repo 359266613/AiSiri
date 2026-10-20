@@ -4,7 +4,7 @@ TARGET = iphone:clang:latest:16.5
 include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = AiSiriPrefs
-AiSiriPrefs_FILES = AxsRootListController.m ../Sources/AxsConfig.m ../Sources/AxsDiagnostics.m
+AiSiriPrefs_FILES = AxsAiSiriRootListController.m ../Sources/AxsAiSiriConfig.m ../Sources/AxsAiSiriDiagnostics.m
 AiSiriPrefs_CFLAGS = -fobjc-arc -I../Sources
 AiSiriPrefs_FRAMEWORKS = Foundation UIKit
 AiSiriPrefs_PRIVATE_FRAMEWORKS = Preferences

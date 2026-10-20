@@ -6,7 +6,7 @@
     <dict>
         <key>bundle</key><string>AiSiriPrefs</string>
         <key>cell</key><string>PSLinkCell</string>
-        <key>detail</key><string>AxsRootListController</string>
+        <key>detail</key><string>AxsAiSiriRootListController</string>
 		<key>icon</key><string>icon@2x.png</string>        
         <key>isController</key><true/>
         <key>label</key><string>AiSiri</string>

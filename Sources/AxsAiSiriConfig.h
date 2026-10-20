@@ -1,9 +1,9 @@
 #pragma once
 #import <Foundation/Foundation.h>
 
-FOUNDATION_EXPORT NSString *const AxsPreferencesChanged;
+FOUNDATION_EXPORT NSString *const AxsAiSiriPreferencesChanged;
 
-@interface AxsConfig : NSObject
+@interface AxsAiSiriConfig : NSObject
 @property (nonatomic, readonly) BOOL enabled;
 @property (nonatomic, readonly) BOOL speakReply;
 @property (nonatomic, readonly, copy) NSString *prefix;

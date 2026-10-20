@@ -1,15 +1,15 @@
-#import "AxsProbeManager.h"
-#import "AxsPrivate.h"
-#import "AxsConfig.h"
-#import "AxsDiagnostics.h"
-#import "AxsTrigger.h"
+#import "AxsAiSiriProbeManager.h"
+#import "AxsAiSiriPrivate.h"
+#import "AxsAiSiriConfig.h"
+#import "AxsAiSiriDiagnostics.h"
+#import "AxsAiSiriTrigger.h"
 #import <objc/runtime.h>
 #include <math.h>
 
-static char AxsStateKey;
-static char AxsSyntheticCommandKey;
+static char AxsAiSiriStateKey;
+static char AxsAiSiriSyntheticCommandKey;
 
-@interface AxsProbeState : NSObject
+@interface AxsAiSiriProbeState : NSObject
 @property NSUInteger generation;
 @property BOOL active;
 @property BOOL finalSeen;
@@ -28,28 +28,28 @@ static char AxsSyntheticCommandKey;
 @property (copy) NSString *responseMode;
 @property NSUInteger preferenceEpoch;
 @end
-@implementation AxsProbeState
+@implementation AxsAiSiriProbeState
 @end
 
-static AxsProbeState *AxsState(id session) {
+static AxsAiSiriProbeState *AxsAiSiriState(id session) {
     // Caller holds the recursive session monitor.
-    AxsProbeState *state = objc_getAssociatedObject(session, &AxsStateKey);
+    AxsAiSiriProbeState *state = objc_getAssociatedObject(session, &AxsAiSiriStateKey);
     if (!state) {
-        state = [AxsProbeState new];
+        state = [AxsAiSiriProbeState new];
         state.active = YES;
-        objc_setAssociatedObject(session, &AxsStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(session, &AxsAiSiriStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     return state;
 }
 
-@interface AxsProbeManager ()
+@interface AxsAiSiriProbeManager ()
 @property (strong) dispatch_queue_t worker;
 @property NSUInteger epoch;
 @end
 
-@implementation AxsProbeManager
+@implementation AxsAiSiriProbeManager
 + (instancetype)shared {
-    static AxsProbeManager *manager;
+    static AxsAiSiriProbeManager *manager;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         manager = [self new];
@@ -65,17 +65,17 @@ static AxsProbeState *AxsState(id session) {
 
 - (void)beginSession:(id)session {
     @synchronized (session) {
-        AxsProbeState *old = AxsState(session);
-        AxsProbeState *fresh = [AxsProbeState new];
+        AxsAiSiriProbeState *old = AxsAiSiriState(session);
+        AxsAiSiriProbeState *fresh = [AxsAiSiriProbeState new];
         fresh.active = YES;
         fresh.generation = old.generation + 1;
-        objc_setAssociatedObject(session, &AxsStateKey, fresh, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(session, &AxsAiSiriStateKey, fresh, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
 - (void)endSession:(id)session {
     @synchronized (session) {
-        AxsProbeState *state = AxsState(session);
+        AxsAiSiriProbeState *state = AxsAiSiriState(session);
         state.active = NO;
         state.generation++;
         state.reply = nil;
@@ -87,7 +87,7 @@ static AxsProbeState *AxsState(id session) {
 - (void)observeRecognition:(id)recognition session:(id)session {
     NSUInteger generation;
     @synchronized (session) {
-        AxsProbeState *state = AxsState(session);
+        AxsAiSiriProbeState *state = AxsAiSiriState(session);
         if (!state.active || state.finalSeen) return;
         state.finalSeen = YES;
         generation = state.generation;
@@ -97,31 +97,31 @@ static AxsProbeState *AxsState(id session) {
     __weak id weakSession = session;
     dispatch_async(self.worker, ^{
         @autoreleasepool {
-            AxsConfig *config = [AxsConfig new];
+            AxsAiSiriConfig *config = [AxsAiSiriConfig new];
             if (!config.enabled) return;
             NSString *className = recognition ? NSStringFromClass([recognition class]) : @"nil";
             if (![recognition respondsToSelector:@selector(oneBestTranscript)]) {
-                AxsRecord(@"unsupported-recognition", @{@"class": className});
+                AxsAiSiriRecord(@"unsupported-recognition", @{@"class": className});
                 return;
             }
             NSString *transcript;
             @try { transcript = [(AFSpeechRecognition *)recognition oneBestTranscript]; }
             @catch (NSException *exception) {
-                AxsRecord(@"transcript-exception", @{@"name": exception.name});
+                AxsAiSiriRecord(@"transcript-exception", @{@"name": exception.name});
                 return;
             }
             if (![transcript isKindOfClass:NSString.class]) {
-                AxsRecord(@"invalid-transcript", @{@"class": className});
+                AxsAiSiriRecord(@"invalid-transcript", @{@"class": className});
                 return;
             }
-            BOOL match = AxsMatchesTrigger(transcript, config.prefix);
-            AxsRecord(@"final-recognition", @{
+            BOOL match = AxsAiSiriMatchesTrigger(transcript, config.prefix);
+            AxsAiSiriRecord(@"final-recognition", @{
                 @"class": className, @"characters": @(transcript.length), @"prefixMatched": @(match)
             });
             if (!match) return;
             NSString *reply = [config.reply stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             if (!reply.length || reply.length > 512) {
-                AxsRecord(@"invalid-reply", @{@"characters": @(reply.length)});
+                AxsAiSiriRecord(@"invalid-reply", @{@"characters": @(reply.length)});
                 return;
             }
             BOOL speak = config.speakReply;
@@ -129,7 +129,7 @@ static AxsProbeState *AxsState(id session) {
                 id target = weakSession;
                 if (!target) return;
                 @synchronized (target) {
-                    AxsProbeState *state = AxsState(target);
+                    AxsAiSiriProbeState *state = AxsAiSiriState(target);
                     if (!state.active || state.generation != generation) return;
                     state.reply = reply;
                     state.speak = speak;
@@ -142,10 +142,10 @@ static AxsProbeState *AxsState(id session) {
                 id target = weakSession;
                 if (!target) return;
                 @synchronized (target) {
-                    AxsProbeState *state = AxsState(target);
+                    AxsAiSiriProbeState *state = AxsAiSiriState(target);
                     if (!state.active || state.generation != generation || state.published || !state.reply) return;
                     state.reply = nil;
-                    AxsRecord(@"probe-timeout", @{
+                    AxsAiSiriRecord(@"probe-timeout", @{
                         @"nativeContextAvailable": @(state.contextReady),
                         @"nativeViewsSeen": @(state.nativeViewsSeen),
                         @"nativeTurnAvailable": @(state.nativeTurnAvailable),
@@ -159,11 +159,11 @@ static AxsProbeState *AxsState(id session) {
 
 #pragma mark - Reuse observed native ACE metadata
 - (void)observeCommand:(id)command session:(id)session turn:(id)turn time:(double)time {
-    if (objc_getAssociatedObject(command, &AxsSyntheticCommandKey)) return;
+    if (objc_getAssociatedObject(command, &AxsAiSiriSyntheticCommandKey)) return;
     Class addViewsClass = NSClassFromString(@"SAUIAddViews");
     if (!addViewsClass || ![command isKindOfClass:addViewsClass]) return;
     @synchronized (session) {
-        AxsProbeState *state = AxsState(session);
+        AxsAiSiriProbeState *state = AxsAiSiriState(session);
         if (!state.active) return;
         state.nativeViewsSeen = YES;
         state.nativeTurnAvailable = turn != nil;
@@ -194,7 +194,7 @@ static AxsProbeState *AxsState(id session) {
     NSUInteger epoch = 0;
     NSDictionary *details;
     @synchronized (session) {
-        AxsProbeState *state = AxsState(session);
+        AxsAiSiriProbeState *state = AxsAiSiriState(session);
         if (!state.active || !state.reply || !state.contextReady || state.published) return;
         @synchronized (self) {
             if (state.preferenceEpoch != self.epoch) {
@@ -208,7 +208,7 @@ static AxsProbeState *AxsState(id session) {
             ![utteranceClass respondsToSelector:@selector(assistantUtteranceView)] ||
             ![session respondsToSelector:@selector(performAceCommand:turnIdentifier:machAbsoluteTime:)]) {
             state.reply = nil;
-            AxsRecord(@"presentation-unavailable", @{});
+            AxsAiSiriRecord(@"presentation-unavailable", @{});
             return;
         }
         // Mark before calling Siri: the hook re-enters synchronously for our command.
@@ -227,7 +227,7 @@ static AxsProbeState *AxsState(id session) {
             command.supplemental = YES;
             command.requiresResponse = NO;
             command.views = @[view];
-            objc_setAssociatedObject(command, &AxsSyntheticCommandKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(command, &AxsAiSiriSyntheticCommandKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             turn = state.turn;
             time = state.commandTime;
             generation = state.generation;
@@ -238,23 +238,23 @@ static AxsProbeState *AxsState(id session) {
                 @"characters": @(state.reply.length)
             };
         } @catch (NSException *exception) {
-            AxsRecord(@"presentation-exception", @{@"name": exception.name});
+            AxsAiSiriRecord(@"presentation-exception", @{@"name": exception.name});
             command = nil;
         }
         state.reply = nil;
     }
     if (!command) return;
     @synchronized (session) {
-        AxsProbeState *state = AxsState(session);
+        AxsAiSiriProbeState *state = AxsAiSiriState(session);
         if (!state.active || state.generation != generation) return;
     }
     @synchronized (self) { if (epoch != self.epoch) return; }
     // Do not hold our monitor across system code or delegate callbacks.
     @try {
         [session performAceCommand:command turnIdentifier:turn machAbsoluteTime:time];
-        AxsRecord(@"answer-submitted", details);
+        AxsAiSiriRecord(@"answer-submitted", details);
     } @catch (NSException *exception) {
-        AxsRecord(@"presentation-exception", @{@"name": exception.name});
+        AxsAiSiriRecord(@"presentation-exception", @{@"name": exception.name});
     }
 }
 @end

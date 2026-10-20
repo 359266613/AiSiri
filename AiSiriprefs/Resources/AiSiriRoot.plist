@@ -7,7 +7,7 @@
     <array>
         <dict>
             <key>cell</key><string>PSGroupCell</string>
-            <key>label</key><string>&#x672C;&#x5730;&#x9A8C;&#x8BC1;</string>
+            <key>label</key><string>AiSiri &#x672C;&#x5730;&#x9A8C;&#x8BC1;</string>
         </dict>
         <dict>
             <key>cell</key><string>PSSwitchCell</string>
@@ -46,7 +46,7 @@
         <dict>
             <key>cell</key><string>PSButtonCell</string>
             <key>label</key><string>&#x590D;&#x5236;&#x8BCA;&#x65AD;</string>
-            <key>action</key><string>axsCopyDiagnostics</string>
+            <key>action</key><string>axsAiSiriCopyDiagnostics</string>
         </dict>
     </array>
 </dict>

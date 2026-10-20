@@ -22,18 +22,22 @@
 ## 目录
 
 ```text
-Hooks/Main.xm                  定向 hook、延迟安装、会话生命周期
-Headers/AxsPrivate.h           实际编译使用的最小声明
+Hooks/AxsAiSiriSessionHooks.xm  定向 hook、延迟安装、会话生命周期
+Headers/AxsAiSiriPrivate.h           实际编译使用的最小声明
 Headers/AF*.h, SA*.h           用户提供的原始导出文件，保持不变
-Sources/AxsProbeManager.m      固定回答验证与原生上下文复用
-Sources/AxsTrigger.m           前缀匹配
-Sources/AxsConfig.m            共享设置读写
-Sources/AxsJailbreakPath.h      用户数据路径解析
-Sources/AxsDiagnostics.m       本地有限长度诊断与统一日志
+Sources/AxsAiSiriProbeManager.m      固定回答验证与原生上下文复用
+Sources/AxsAiSiriTrigger.m           前缀匹配
+Sources/AxsAiSiriConfig.m            共享设置读写
+Sources/AxsAiSiriJailbreakPath.h      用户数据路径解析
+Sources/AxsAiSiriDiagnostics.m       本地有限长度诊断与统一日志
 AiSiriprefs/                    PreferenceLoader 设置面板
 layout/                        面板注册入口
 Tests/                         静态检查与 macOS Objective-C 测试
 ```
+
+本插件自有的类、C 函数、常量、状态键统一使用 `AxsAiSiri` 前缀，
+设置面板自有 selector 和属性使用 `axsAiSiri` 前缀，避免与其他 Axs 插件共享运行时名称。
+Apple 私有类与必须覆写的系统方法名称不变。设置域仍为 `com.axs.aisiri`，已有配置保留。
 
 ## 编译
 

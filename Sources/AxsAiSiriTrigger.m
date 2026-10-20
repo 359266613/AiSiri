@@ -1,14 +1,14 @@
-#import "AxsTrigger.h"
+#import "AxsAiSiriTrigger.h"
 
-static NSString *AxsNormalizeTrigger(NSString *text) {
+static NSString *AxsAiSiriNormalizeTrigger(NSString *text) {
     NSCharacterSet *ignored = [NSCharacterSet whitespaceAndNewlineCharacterSet];
     NSArray *parts = [[text precomposedStringWithCompatibilityMapping] componentsSeparatedByCharactersInSet:ignored];
     return [[parts componentsJoinedByString:@""] lowercaseString];
 }
 
-BOOL AxsMatchesTrigger(NSString *transcript, NSString *prefix) {
+BOOL AxsAiSiriMatchesTrigger(NSString *transcript, NSString *prefix) {
     if (![transcript isKindOfClass:NSString.class] || ![prefix isKindOfClass:NSString.class]) return NO;
-    NSString *wanted = AxsNormalizeTrigger(prefix);
+    NSString *wanted = AxsAiSiriNormalizeTrigger(prefix);
     NSString *actual = [[transcript precomposedStringWithCompatibilityMapping] lowercaseString];
     if (!wanted.length) return NO;
     NSCharacterSet *spaces = NSCharacterSet.whitespaceAndNewlineCharacterSet;

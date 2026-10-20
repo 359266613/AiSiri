@@ -1,7 +1,7 @@
 #pragma once
 #import <Foundation/Foundation.h>
 
-@interface AxsProbeManager : NSObject
+@interface AxsAiSiriProbeManager : NSObject
 + (instancetype)shared;
 - (void)beginSession:(id)session;
 - (void)endSession:(id)session;

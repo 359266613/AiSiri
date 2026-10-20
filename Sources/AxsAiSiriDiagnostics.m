@@ -1,8 +1,8 @@
-#import "AxsDiagnostics.h"
-#import "AxsJailbreakPath.h"
+#import "AxsAiSiriDiagnostics.h"
+#import "AxsAiSiriJailbreakPath.h"
 #import <os/log.h>
 
-void AxsRecord(NSString *event, NSDictionary *details) {
+void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
     static dispatch_queue_t queue;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -25,7 +25,7 @@ void AxsRecord(NSString *event, NSDictionary *details) {
             if (entries.count > 120) [entries removeObjectAtIndex:0];
             os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "%{public}@ %{public}@",
                              event, details.description ?: @"");
-            NSString *directory = AxsDiagnosticDirectory();
+            NSString *directory = AxsAiSiriDiagnosticDirectory();
             NSError *error;
             if (![[NSFileManager defaultManager] createDirectoryAtPath:directory
                 withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:&error]) {
@@ -45,9 +45,9 @@ void AxsRecord(NSString *event, NSDictionary *details) {
     });
 }
 
-NSString *AxsReadDiagnostics(void) {
+NSString *AxsAiSiriReadDiagnostics(void) {
     NSMutableString *output = [NSMutableString stringWithString:@"AiSiri local probe 1.0.0\n"];
-    NSString *directory = AxsDiagnosticDirectory();
+    NSString *directory = AxsAiSiriDiagnosticDirectory();
     NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:directory error:NULL];
     for (NSString *name in [names sortedArrayUsingSelector:@selector(compare:)]) {
         if (![name.pathExtension isEqualToString:@"plist"]) continue;

@@ -1,14 +1,14 @@
-#import "AxsConfig.h"
-#import "AxsJailbreakPath.h"
+#import "AxsAiSiriConfig.h"
+#import "AxsAiSiriJailbreakPath.h"
 
-NSString *const AxsPreferencesChanged = @"com.axs.aisiri/preferences-changed";
-static NSString *const AxsDomain = @"com.axs.aisiri";
+NSString *const AxsAiSiriPreferencesChanged = @"com.axs.aisiri/preferences-changed";
+static NSString *const AxsAiSiriDomain = @"com.axs.aisiri";
 
-static NSUserDefaults *AxsDefaults(void) {
-    return [[NSUserDefaults alloc] initWithSuiteName:AxsDomain];
+static NSUserDefaults *AxsAiSiriDefaults(void) {
+    return [[NSUserDefaults alloc] initWithSuiteName:AxsAiSiriDomain];
 }
 
-@implementation AxsConfig
+@implementation AxsAiSiriConfig
 
 #pragma mark - Shared preferences
 + (NSDictionary *)defaults {
@@ -22,17 +22,17 @@ static NSUserDefaults *AxsDefaults(void) {
 }
 
 + (id)valueForKey:(NSString *)key {
-    for (NSString *path in AxsPreferencesPaths()) {
+    for (NSString *path in AxsAiSiriPreferencesPaths()) {
         id value = [NSDictionary dictionaryWithContentsOfFile:path][key];
         if (value) return value;
     }
-    return [AxsDefaults() objectForKey:key] ?: [self defaults][key];
+    return [AxsAiSiriDefaults() objectForKey:key] ?: [self defaults][key];
 }
 
 + (BOOL)setValue:(id)value forPreferenceKey:(NSString *)key {
     if (![self defaults][key] || !value) return NO;
-    NSArray *paths = AxsPreferencesPaths();
-    NSString *isolated = AxsIsolatedUserPath(paths.lastObject);
+    NSArray *paths = AxsAiSiriPreferencesPaths();
+    NSString *isolated = AxsAiSiriIsolatedUserPath(paths.lastObject);
     BOOL wrote = NO;
     // Only the panel writes. Existing copies are merged; isolated copies must exist.
     for (NSString *path in paths) {
@@ -47,11 +47,11 @@ static NSUserDefaults *AxsDefaults(void) {
         if ([values writeToFile:path atomically:YES]) wrote = YES;
     }
     if (wrote) {
-        NSUserDefaults *defaults = AxsDefaults();
+        NSUserDefaults *defaults = AxsAiSiriDefaults();
         [defaults setObject:value forKey:key];
         [defaults synchronize];
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-            (__bridge CFStringRef)AxsPreferencesChanged, NULL, NULL, true);
+            (__bridge CFStringRef)AxsAiSiriPreferencesChanged, NULL, NULL, true);
     }
     return wrote;
 }
@@ -61,8 +61,8 @@ static NSUserDefaults *AxsDefaults(void) {
     if (!NSClassFromString(@"PSListController")) return NO;
     BOOL success = YES;
     for (NSString *key in [self defaults]) {
-        BOOL exists = [AxsDefaults() objectForKey:key] != nil;
-        for (NSString *path in AxsPreferencesPaths()) {
+        BOOL exists = [AxsAiSiriDefaults() objectForKey:key] != nil;
+        for (NSString *path in AxsAiSiriPreferencesPaths()) {
             if ([NSDictionary dictionaryWithContentsOfFile:path][key]) exists = YES;
         }
         if (!exists && ![self setValue:[self defaults][key] forPreferenceKey:key]) success = NO;
@@ -72,19 +72,19 @@ static NSUserDefaults *AxsDefaults(void) {
 
 #pragma mark - Uncached typed access
 - (BOOL)enabled {
-    id value = [AxsConfig valueForKey:@"enabled"];
+    id value = [AxsAiSiriConfig valueForKey:@"enabled"];
     return [value isKindOfClass:NSNumber.class] && [value boolValue];
 }
 - (BOOL)speakReply {
-    id value = [AxsConfig valueForKey:@"speakReply"];
+    id value = [AxsAiSiriConfig valueForKey:@"speakReply"];
     return [value isKindOfClass:NSNumber.class] && [value boolValue];
 }
 - (NSString *)prefix {
-    id value = [AxsConfig valueForKey:@"prefix"];
+    id value = [AxsAiSiriConfig valueForKey:@"prefix"];
     return [value isKindOfClass:NSString.class] ? value : @"";
 }
 - (NSString *)reply {
-    id value = [AxsConfig valueForKey:@"reply"];
+    id value = [AxsAiSiriConfig valueForKey:@"reply"];
     return [value isKindOfClass:NSString.class] ? value : @"";
 }
 @end

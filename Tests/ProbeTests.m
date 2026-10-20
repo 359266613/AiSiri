@@ -1,17 +1,17 @@
 #import <Foundation/Foundation.h>
-#import "AxsPrivate.h"
-#import "AxsConfig.h"
-#import "AxsDiagnostics.h"
-#import "AxsProbeManager.h"
-#import "AxsTrigger.h"
+#import "AxsAiSiriPrivate.h"
+#import "AxsAiSiriConfig.h"
+#import "AxsAiSiriDiagnostics.h"
+#import "AxsAiSiriProbeManager.h"
+#import "AxsAiSiriTrigger.h"
 #include <stdlib.h>
 
-static NSMutableDictionary *AxsTestValues;
-static NSMutableArray *AxsTestEvents;
-static NSUInteger AxsChecks;
+static NSMutableDictionary *AxsAiSiriTestValues;
+static NSMutableArray *AxsAiSiriTestEvents;
+static NSUInteger AxsAiSiriChecks;
 
-static void AxsCheck(BOOL condition, NSString *message) {
-    AxsChecks++;
+static void AxsAiSiriCheck(BOOL condition, NSString *message) {
+    AxsAiSiriChecks++;
     if (!condition) {
         NSLog(@"FAIL: %@", message);
         exit(1);
@@ -19,28 +19,28 @@ static void AxsCheck(BOOL condition, NSString *message) {
 }
 
 // No preferences, files, audio, network, hooks or system Siri are used by this test.
-@implementation AxsConfig
+@implementation AxsAiSiriConfig
 + (NSDictionary *)defaults {
     return @{@"enabled": @YES, @"speakReply": @NO, @"prefix": @"\u95eeAI", @"reply": @"Local probe."};
 }
 + (id)valueForKey:(NSString *)key {
-    @synchronized (self) { return AxsTestValues[key]; }
+    @synchronized (self) { return AxsAiSiriTestValues[key]; }
 }
 + (BOOL)setValue:(id)value forPreferenceKey:(NSString *)key {
-    @synchronized (self) { AxsTestValues[key] = value; }
+    @synchronized (self) { AxsAiSiriTestValues[key] = value; }
     return YES;
 }
 + (BOOL)registerDefaults { return YES; }
-- (BOOL)enabled { return [[AxsConfig valueForKey:@"enabled"] boolValue]; }
-- (BOOL)speakReply { return [[AxsConfig valueForKey:@"speakReply"] boolValue]; }
-- (NSString *)prefix { return [AxsConfig valueForKey:@"prefix"]; }
-- (NSString *)reply { return [AxsConfig valueForKey:@"reply"]; }
+- (BOOL)enabled { return [[AxsAiSiriConfig valueForKey:@"enabled"] boolValue]; }
+- (BOOL)speakReply { return [[AxsAiSiriConfig valueForKey:@"speakReply"] boolValue]; }
+- (NSString *)prefix { return [AxsAiSiriConfig valueForKey:@"prefix"]; }
+- (NSString *)reply { return [AxsAiSiriConfig valueForKey:@"reply"]; }
 @end
 
-void AxsRecord(NSString *event, NSDictionary *details) {
-    @synchronized (AxsTestEvents) { [AxsTestEvents addObject:event]; }
+void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
+    @synchronized (AxsAiSiriTestEvents) { [AxsAiSiriTestEvents addObject:event]; }
 }
-NSString *AxsReadDiagnostics(void) { return @"test"; }
+NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 
 @implementation SAUIAddViews
 + (instancetype)addViews { return [self new]; }
@@ -49,47 +49,47 @@ NSString *AxsReadDiagnostics(void) { return @"test"; }
 + (instancetype)assistantUtteranceView { return [self new]; }
 @end
 
-@interface AxsTestRecognition : NSObject
+@interface AxsAiSiriTestRecognition : NSObject
 @property (copy) NSString *transcript;
 - (id)oneBestTranscript;
 @end
-@implementation AxsTestRecognition
+@implementation AxsAiSiriTestRecognition
 - (id)oneBestTranscript { return self.transcript; }
 @end
 
 @interface AFUISiriSession ()
-@property (strong) NSMutableArray *axsSubmitted;
+@property (strong) NSMutableArray *axsAiSiriSubmitted;
 @end
 @implementation AFUISiriSession
 - (instancetype)init {
     self = [super init];
-    if (self) _axsSubmitted = [NSMutableArray array];
+    if (self) _axsAiSiriSubmitted = [NSMutableArray array];
     return self;
 }
 - (void)assistantConnection:(id)connection speechRecognized:(id)recognized {
-    [[AxsProbeManager shared] observeRecognition:recognized session:self];
+    [[AxsAiSiriProbeManager shared] observeRecognition:recognized session:self];
 }
 - (void)assistantConnectionRequestWillStart:(id)connection {
-    [[AxsProbeManager shared] beginSession:self];
+    [[AxsAiSiriProbeManager shared] beginSession:self];
 }
 - (void)assistantConnectionDismissAssistant:(id)connection { [self end]; }
-- (void)end { [[AxsProbeManager shared] endSession:self]; }
+- (void)end { [[AxsAiSiriProbeManager shared] endSession:self]; }
 - (void)endForReason:(long long)reason { [self end]; }
 - (void)performAceCommand:(id)command turnIdentifier:(id)identifier machAbsoluteTime:(double)time {
-    AxsCheck(NSThread.isMainThread, @"submission on main thread");
-    AxsCheck([identifier isEqual:@"native-turn"], @"reuse native turn");
-    AxsCheck(time == 123.5, @"reuse native timestamp");
-    [self.axsSubmitted addObject:command];
+    AxsAiSiriCheck(NSThread.isMainThread, @"submission on main thread");
+    AxsAiSiriCheck([identifier isEqual:@"native-turn"], @"reuse native turn");
+    AxsAiSiriCheck(time == 123.5, @"reuse native timestamp");
+    [self.axsAiSiriSubmitted addObject:command];
     // Simulate the production post-hook to exercise recursion suppression.
-    [[AxsProbeManager shared] observeCommand:command session:self turn:identifier time:time];
+    [[AxsAiSiriProbeManager shared] observeCommand:command session:self turn:identifier time:time];
 }
 @end
 
-static BOOL AxsHasEvent(NSString *event) {
-    @synchronized (AxsTestEvents) { return [AxsTestEvents containsObject:event]; }
+static BOOL AxsAiSiriHasEvent(NSString *event) {
+    @synchronized (AxsAiSiriTestEvents) { return [AxsAiSiriTestEvents containsObject:event]; }
 }
 
-static void AxsPump(NSTimeInterval seconds) {
+static void AxsAiSiriPump(NSTimeInterval seconds) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:seconds];
     while (deadline.timeIntervalSinceNow > 0) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
@@ -98,171 +98,171 @@ static void AxsPump(NSTimeInterval seconds) {
     }
 }
 
-static void AxsWait(BOOL (^predicate)(void), NSString *message) {
+static void AxsAiSiriWait(BOOL (^predicate)(void), NSString *message) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
-    while (!predicate() && deadline.timeIntervalSinceNow > 0) AxsPump(0.005);
-    AxsCheck(predicate(), message);
+    while (!predicate() && deadline.timeIntervalSinceNow > 0) AxsAiSiriPump(0.005);
+    AxsAiSiriCheck(predicate(), message);
 }
 
-static AFUISiriSession *AxsNewSession(void) {
-    [[AxsProbeManager shared] preferencesChanged];
-    @synchronized (AxsConfig.class) { AxsTestValues = [[AxsConfig defaults] mutableCopy]; }
-    @synchronized (AxsTestEvents) { [AxsTestEvents removeAllObjects]; }
+static AFUISiriSession *AxsAiSiriNewSession(void) {
+    [[AxsAiSiriProbeManager shared] preferencesChanged];
+    @synchronized (AxsAiSiriConfig.class) { AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy]; }
+    @synchronized (AxsAiSiriTestEvents) { [AxsAiSiriTestEvents removeAllObjects]; }
     AFUISiriSession *session = [AFUISiriSession new];
     [session assistantConnectionRequestWillStart:nil];
     return session;
 }
 
-static void AxsRecognize(AFUISiriSession *session, NSString *text) {
-    AxsTestRecognition *recognition = [AxsTestRecognition new];
+static void AxsAiSiriRecognize(AFUISiriSession *session, NSString *text) {
+    AxsAiSiriTestRecognition *recognition = [AxsAiSiriTestRecognition new];
     recognition.transcript = text;
     [session assistantConnection:nil speechRecognized:recognition];
 }
 
-static void AxsNativeContext(AFUISiriSession *session) {
+static void AxsAiSiriNativeContext(AFUISiriSession *session) {
     SAUIAddViews *native = [SAUIAddViews addViews];
     native.refId = @"native-ref";
     native.displayTarget = @"Primary";
     native.dialogPhase = @"Summary";
-    [[AxsProbeManager shared] observeCommand:native session:session turn:@"native-turn" time:123.5];
+    [[AxsAiSiriProbeManager shared] observeCommand:native session:session turn:@"native-turn" time:123.5];
 }
 
-static void AxsTestTriggers(void) {
-    AxsCheck(AxsMatchesTrigger(@"\u95eeAI\u4f60\u597d", @"\u95eeAI"), @"Chinese trigger");
-    AxsCheck(AxsMatchesTrigger(@" \u95ee A I\uFF0C\u4f60\u597d ", @"\u95eeAI"), @"ASR spaces");
-    AxsCheck(AxsMatchesTrigger(@"\u95ee\uFF21\uFF29\u4f60\u597d", @"\u95eeAI"), @"full-width letters");
-    AxsCheck(AxsMatchesTrigger(@"Ask AI explain this", @"ask ai"), @"case-insensitive word boundary");
-    AxsCheck(AxsMatchesTrigger(@"Ask A I: explain", @"ask ai"), @"spaced English prefix");
-    AxsCheck(!AxsMatchesTrigger(@"ask aioli", @"ask ai"), @"reject partial English word");
-    AxsCheck(!AxsMatchesTrigger(@"hello ask ai", @"ask ai"), @"prefix only");
-    AxsCheck(!AxsMatchesTrigger(@"hello", @""), @"empty prefix");
-    AxsCheck(!AxsMatchesTrigger(@"hello", @"  "), @"whitespace prefix");
-    AxsCheck(!AxsMatchesTrigger(@"\u95eeAI", @"\u95eeAI"), @"bare prefix");
-    AxsCheck(!AxsMatchesTrigger(@"\u95eeAI:  ", @"\u95eeAI"), @"punctuation-only question");
-    AxsCheck(!AxsMatchesTrigger(nil, @"ask ai"), @"nil transcript");
+static void AxsAiSiriTestTriggers(void) {
+    AxsAiSiriCheck(AxsAiSiriMatchesTrigger(@"\u95eeAI\u4f60\u597d", @"\u95eeAI"), @"Chinese trigger");
+    AxsAiSiriCheck(AxsAiSiriMatchesTrigger(@" \u95ee A I\uFF0C\u4f60\u597d ", @"\u95eeAI"), @"ASR spaces");
+    AxsAiSiriCheck(AxsAiSiriMatchesTrigger(@"\u95ee\uFF21\uFF29\u4f60\u597d", @"\u95eeAI"), @"full-width letters");
+    AxsAiSiriCheck(AxsAiSiriMatchesTrigger(@"Ask AI explain this", @"ask ai"), @"case-insensitive word boundary");
+    AxsAiSiriCheck(AxsAiSiriMatchesTrigger(@"Ask A I: explain", @"ask ai"), @"spaced English prefix");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"ask aioli", @"ask ai"), @"reject partial English word");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"hello ask ai", @"ask ai"), @"prefix only");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"hello", @""), @"empty prefix");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"hello", @"  "), @"whitespace prefix");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"\u95eeAI", @"\u95eeAI"), @"bare prefix");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(@"\u95eeAI:  ", @"\u95eeAI"), @"punctuation-only question");
+    AxsAiSiriCheck(!AxsAiSiriMatchesTrigger(nil, @"ask ai"), @"nil transcript");
 }
 
-static void AxsTestSubmission(void) {
-    AFUISiriSession *session = AxsNewSession();
-    AxsNativeContext(session);
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return session.axsSubmitted.count == 1; }, @"submit fixed reply");
-    SAUIAddViews *command = session.axsSubmitted.firstObject;
+static void AxsAiSiriTestSubmission(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return session.axsAiSiriSubmitted.count == 1; }, @"submit fixed reply");
+    SAUIAddViews *command = session.axsAiSiriSubmitted.firstObject;
     SAUIAssistantUtteranceView *view = command.views.firstObject;
-    AxsCheck([view.text isEqual:@"Local probe."], @"fixed text");
-    AxsCheck(view.speakableText == nil, @"speech off by default");
-    AxsCheck([command.refId isEqual:@"native-ref"], @"reuse native refId");
-    AxsCheck(command.supplemental && !command.requiresResponse, @"nonblocking supplemental reply");
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsNativeContext(session);
-    AxsPump(0.05);
-    AxsCheck(session.axsSubmitted.count == 1, @"one submission per turn; no recursion");
+    AxsAiSiriCheck([view.text isEqual:@"Local probe."], @"fixed text");
+    AxsAiSiriCheck(view.speakableText == nil, @"speech off by default");
+    AxsAiSiriCheck([command.refId isEqual:@"native-ref"], @"reuse native refId");
+    AxsAiSiriCheck(command.supplemental && !command.requiresResponse, @"nonblocking supplemental reply");
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 1, @"one submission per turn; no recursion");
     [session end];
 
-    session = AxsNewSession();
-    [AxsConfig setValue:@YES forPreferenceKey:@"speakReply"];
-    AxsNativeContext(session);
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return session.axsSubmitted.count == 1; }, @"submit speech request");
-    command = session.axsSubmitted.firstObject;
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@YES forPreferenceKey:@"speakReply"];
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return session.axsAiSiriSubmitted.count == 1; }, @"submit speech request");
+    command = session.axsAiSiriSubmitted.firstObject;
     view = command.views.firstObject;
-    AxsCheck([view.speakableText isEqual:view.text], @"speech text opt-in");
+    AxsAiSiriCheck([view.speakableText isEqual:view.text], @"speech text opt-in");
     [session end];
 
-    session = AxsNewSession();
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return AxsHasEvent(@"final-recognition"); }, @"recognition without context");
-    AxsPump(0.03);
-    AxsCheck(session.axsSubmitted.count == 0, @"never fabricate native context");
-    [[AxsProbeManager shared] observeCommand:[SAUIAddViews addViews] session:session turn:nil time:0];
-    AxsPump(0.03);
-    AxsCheck(session.axsSubmitted.count == 0, @"nil native turn is not guessed");
-    AxsNativeContext(session);
-    AxsWait(^BOOL { return session.axsSubmitted.count == 1; }, @"wait for real native context");
+    session = AxsAiSiriNewSession();
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"recognition without context");
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"never fabricate native context");
+    [[AxsAiSiriProbeManager shared] observeCommand:[SAUIAddViews addViews] session:session turn:nil time:0];
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"nil native turn is not guessed");
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriWait(^BOOL { return session.axsAiSiriSubmitted.count == 1; }, @"wait for real native context");
     [session end];
 }
 
-static void AxsTestCancellation(void) {
-    AFUISiriSession *session = AxsNewSession();
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return AxsHasEvent(@"final-recognition"); }, @"recognition before end");
-    AxsPump(0.03);
+static void AxsAiSiriTestCancellation(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"recognition before end");
+    AxsAiSiriPump(0.03);
     [session end];
-    AxsNativeContext(session);
-    AxsPump(0.05);
-    AxsCheck(session.axsSubmitted.count == 0, @"closed session cannot publish");
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"closed session cannot publish");
 
-    session = AxsNewSession();
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return AxsHasEvent(@"final-recognition"); }, @"recognition before new turn");
-    AxsPump(0.03);
+    session = AxsAiSiriNewSession();
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"recognition before new turn");
+    AxsAiSiriPump(0.03);
     [session assistantConnectionRequestWillStart:nil];
-    AxsNativeContext(session);
-    AxsPump(0.05);
-    AxsCheck(session.axsSubmitted.count == 0, @"old result cannot enter next turn");
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"old result cannot enter next turn");
     [session end];
 
-    session = AxsNewSession();
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return AxsHasEvent(@"final-recognition"); }, @"recognition before preference change");
-    AxsPump(0.03);
-    [[AxsProbeManager shared] preferencesChanged];
-    AxsNativeContext(session);
-    AxsPump(0.05);
-    AxsCheck(session.axsSubmitted.count == 0, @"preference change invalidates pending result");
+    session = AxsAiSiriNewSession();
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"recognition before preference change");
+    AxsAiSiriPump(0.03);
+    [[AxsAiSiriProbeManager shared] preferencesChanged];
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"preference change invalidates pending result");
     [session end];
 }
 
-static void AxsTestRejection(void) {
-    AFUISiriSession *session = AxsNewSession();
-    AxsNativeContext(session);
-    AxsRecognize(session, @"\u4eca\u5929\u5929\u6c14");
-    AxsWait(^BOOL { return AxsHasEvent(@"final-recognition"); }, @"ordinary recognition");
-    AxsPump(0.03);
-    AxsCheck(session.axsSubmitted.count == 0, @"ordinary Siri request untouched");
+static void AxsAiSiriTestRejection(void) {
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriRecognize(session, @"\u4eca\u5929\u5929\u6c14");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"final-recognition"); }, @"ordinary recognition");
+    AxsAiSiriPump(0.03);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"ordinary Siri request untouched");
     [session end];
 
-    session = AxsNewSession();
+    session = AxsAiSiriNewSession();
     [session assistantConnection:nil speechRecognized:[NSObject new]];
-    AxsWait(^BOOL { return AxsHasEvent(@"unsupported-recognition"); }, @"unknown type is diagnostic only");
-    AxsCheck(session.axsSubmitted.count == 0, @"unknown type not submitted");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"unsupported-recognition"); }, @"unknown type is diagnostic only");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"unknown type not submitted");
     [session end];
 
-    session = AxsNewSession();
-    [AxsConfig setValue:@NO forPreferenceKey:@"enabled"];
-    AxsNativeContext(session);
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsPump(0.08);
-    AxsCheck(session.axsSubmitted.count == 0 && !AxsHasEvent(@"final-recognition"), @"disabled probe is silent");
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@NO forPreferenceKey:@"enabled"];
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriPump(0.08);
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0 && !AxsAiSiriHasEvent(@"final-recognition"), @"disabled probe is silent");
     [session end];
 
-    session = AxsNewSession();
-    [AxsConfig setValue:@"" forPreferenceKey:@"reply"];
-    AxsNativeContext(session);
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return AxsHasEvent(@"invalid-reply"); }, @"empty reply rejected");
-    AxsCheck(session.axsSubmitted.count == 0, @"empty reply not submitted");
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@"" forPreferenceKey:@"reply"];
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"invalid-reply"); }, @"empty reply rejected");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"empty reply not submitted");
     [session end];
 
-    session = AxsNewSession();
-    [AxsConfig setValue:[@"" stringByPaddingToLength:513 withString:@"x" startingAtIndex:0]
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:[@"" stringByPaddingToLength:513 withString:@"x" startingAtIndex:0]
         forPreferenceKey:@"reply"];
-    AxsNativeContext(session);
-    AxsRecognize(session, @"\u95eeAI\u4f60\u597d");
-    AxsWait(^BOOL { return AxsHasEvent(@"invalid-reply"); }, @"oversized reply rejected");
-    AxsCheck(session.axsSubmitted.count == 0, @"oversized reply not submitted");
+    AxsAiSiriNativeContext(session);
+    AxsAiSiriRecognize(session, @"\u95eeAI\u4f60\u597d");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasEvent(@"invalid-reply"); }, @"oversized reply rejected");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"oversized reply not submitted");
     [session end];
 }
 
 int main(void) {
     @autoreleasepool {
-        AxsTestValues = [[AxsConfig defaults] mutableCopy];
-        AxsTestEvents = [NSMutableArray array];
-        AxsTestTriggers();
-        AxsTestSubmission();
-        AxsTestCancellation();
-        AxsTestRejection();
-        NSLog(@"PASS: %lu checks", (unsigned long)AxsChecks);
+        AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy];
+        AxsAiSiriTestEvents = [NSMutableArray array];
+        AxsAiSiriTestTriggers();
+        AxsAiSiriTestSubmission();
+        AxsAiSiriTestCancellation();
+        AxsAiSiriTestRejection();
+        NSLog(@"PASS: %lu checks", (unsigned long)AxsAiSiriChecks);
     }
     return 0;
 }

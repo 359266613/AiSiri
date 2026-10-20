@@ -9,6 +9,6 @@ output="$(mktemp -d)"
 trap 'rm -f -- "$output/probe-tests"; rmdir -- "$output"' EXIT
 xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Wno-unused-parameter \
     -IHeaders -ISources -framework Foundation \
-    Tests/ProbeTests.m Sources/AxsTrigger.m Sources/AxsProbeManager.m \
+    Tests/ProbeTests.m Sources/AxsAiSiriTrigger.m Sources/AxsAiSiriProbeManager.m \
     -o "$output/probe-tests"
 "$output/probe-tests"
