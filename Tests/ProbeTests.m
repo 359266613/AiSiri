@@ -14,6 +14,7 @@ static NSMutableArray *AxsAiSiriTestEvents;
 static NSUInteger AxsAiSiriChecks;
 static NSUInteger AxsAiSiriTestDelegateHooks;
 static NSMutableDictionary *AxsAiSiriTestEventDetails;
+static NSMutableSet *AxsAiSiriTestBindingReasons;
 
 static void AxsAiSiriCheck(BOOL condition, NSString *message) {
     AxsAiSiriChecks++;
@@ -47,6 +48,9 @@ void AxsAiSiriRecord(NSString *event, NSDictionary *details) {
     @synchronized (AxsAiSiriTestEvents) {
         [AxsAiSiriTestEvents addObject:event];
         AxsAiSiriTestEventDetails[event] = details;
+        if ([event isEqual:@"delegate-binding"]) {
+            [AxsAiSiriTestBindingReasons addObject:[NSString stringWithFormat:@"%@/%@", details[@"stage"], details[@"reason"]]];
+        }
     }
 }
 NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
@@ -56,6 +60,14 @@ NSString *AxsAiSiriReadDiagnostics(void) { return @"test"; }
 @end
 @implementation SAUIAssistantUtteranceView
 + (instancetype)assistantUtteranceView { return [self new]; }
+@end
+
+@interface AxsAiSiriTestBrokenViews : SAUIAddViews
+@end
+@implementation AxsAiSiriTestBrokenViews
+- (NSString *)refId {
+    @throw [NSException exceptionWithName:@"AxsAiSiriTestMetadataException" reason:nil userInfo:nil];
+}
 @end
 
 @interface AxsAiSiriTestRecognition : NSObject
@@ -226,6 +238,7 @@ static AFUISiriSession *AxsAiSiriNewSession(void) {
     @synchronized (AxsAiSiriTestEvents) {
         [AxsAiSiriTestEvents removeAllObjects];
         [AxsAiSiriTestEventDetails removeAllObjects];
+        [AxsAiSiriTestBindingReasons removeAllObjects];
     }
     AFUISiriSession *session = [AFUISiriSession new];
     [session assistantConnectionRequestWillStart:nil];
@@ -681,11 +694,94 @@ static void AxsAiSiriTestDelegateDelivery(void) {
     [session end];
 }
 
+static BOOL AxsAiSiriHasBinding(NSString *reason) {
+    @synchronized (AxsAiSiriTestEvents) { return [AxsAiSiriTestBindingReasons containsObject:reason]; }
+}
+
+static void AxsAiSiriTestBindingDiagnostics(void) {
+    NSString *selector = @"siriSessionDidReceiveAddViewsCommand:completion:";
+    id completion = [^(id response) {} copy];
+    AxsAiSiriProbeManager *manager = [AxsAiSiriProbeManager shared];
+    AFUISiriSession *session = AxsAiSiriNewSession();
+    NSObject *delegate = [NSObject new];
+    session.axsAiSiriDelegate = delegate;
+    SAUIAddViews *native = [SAUIAddViews addViews];
+    [manager observeDelegate:delegate selector:selector arguments:@[native, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/command-context-missing"); },
+        @"unlinked callback has a precise reason");
+    [session assistantConnection:nil receivedCommand:native completion:nil];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"receive/command-linked"); },
+        @"received command association is verified");
+    // A distinct command must not inherit context just because its metadata matches.
+    [manager observeDelegate:delegate selector:selector arguments:@[[SAUIAddViews addViews], completion]];
+    [manager observeDelegate:[NSObject new] selector:selector arguments:@[native, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/delegate-mismatch"); },
+        @"proxy identity mismatch is distinct from a missing command association");
+    [manager observeDelegate:delegate selector:selector arguments:@[native]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/argument-count"); }, @"argument shape is diagnosed");
+    [manager observeDelegate:delegate selector:selector arguments:@[NSNull.null, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/not-add-views"); }, @"wrong command type is diagnosed");
+    [manager observeDelegate:delegate selector:selector arguments:@[native, NSNull.null]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/completion-unsupported"); },
+        @"unsupported completion is distinguished from identity failures");
+    SAUIAddViews *broken = [AxsAiSiriTestBrokenViews addViews];
+    [session assistantConnection:nil receivedCommand:broken completion:nil];
+    [manager observeDelegate:delegate selector:selector arguments:@[broken, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/metadata-exception"); },
+        @"metadata exceptions have a binding stage reason");
+    [manager observeDelegate:delegate selector:selector arguments:@[native, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/context-ready"); }, @"successful context binding is explicit");
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"present/reply-not-ready"); }, @"waiting for recognition is explicit");
+    AxsAiSiriCheck(session.axsAiSiriSubmitted.count == 0, @"diagnostics do not bypass matching or cause submission");
+    [session assistantConnectionRequestWillStart:nil];
+    [manager observeDelegate:delegate selector:selector arguments:@[native, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/generation-mismatch"); },
+        @"stale command generation is diagnosed and rejected");
+    [session end];
+    [manager observeDelegate:delegate selector:selector arguments:@[native, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/session-inactive"); }, @"closed session is diagnosed");
+    [session assistantConnection:nil receivedCommand:[SAUIAddViews addViews] completion:nil];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"receive/session-inactive"); }, @"inactive receive explains absent association");
+
+    session = AxsAiSiriNewSession();
+    __weak AFUISiriSession *weakSession;
+    @autoreleasepool {
+        AFUISiriSession *temporary = [AFUISiriSession new];
+        weakSession = temporary;
+        [temporary assistantConnectionRequestWillStart:nil];
+        [temporary assistantConnection:nil receivedCommand:native completion:nil];
+    }
+    AxsAiSiriCheck(weakSession == nil, @"command provenance does not retain a session");
+    [manager observeDelegate:delegate selector:selector arguments:@[native, completion]];
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/session-released"); }, @"released session is diagnosed separately");
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+        [manager observeDelegate:delegate selector:selector arguments:@[native, completion]];
+    });
+    AxsAiSiriWait(^BOOL { return AxsAiSiriHasBinding(@"callback/not-main-thread"); }, @"off-main callback is diagnosed without delivery");
+    NSUInteger count;
+    @synchronized (AxsAiSiriTestEvents) { count = AxsAiSiriTestEvents.count; }
+    for (NSUInteger i = 0; i < 40; i++)
+        [manager observeDelegate:delegate selector:selector arguments:@[[SAUIAddViews addViews], completion]];
+    AxsAiSiriPump(0.1);
+    NSUInteger after;
+    @synchronized (AxsAiSiriTestEvents) { after = AxsAiSiriTestEvents.count; }
+    AxsAiSiriCheck(after <= count + 1, @"repeated binding failures are deduplicated");
+    [session end];
+
+    session = AxsAiSiriNewSession();
+    [AxsAiSiriConfig setValue:@NO forPreferenceKey:@"enabled"];
+    [manager observeDelegate:delegate selector:selector arguments:@[[SAUIAddViews addViews], completion]];
+    AxsAiSiriPump(0.05);
+    AxsAiSiriCheck(!AxsAiSiriHasEvent(@"delegate-binding"), @"disabled binding diagnostics remain silent");
+    [session end];
+}
+
 int main(void) {
     @autoreleasepool {
         AxsAiSiriTestValues = [[AxsAiSiriConfig defaults] mutableCopy];
         AxsAiSiriTestEvents = [NSMutableArray array];
         AxsAiSiriTestEventDetails = [NSMutableDictionary dictionary];
+        AxsAiSiriTestBindingReasons = [NSMutableSet set];
         AxsAiSiriTestTriggers();
         AxsAiSiriTestACEExtraction();
         AxsAiSiriTestSubmission();
@@ -696,6 +792,7 @@ int main(void) {
         AxsAiSiriTestDelegateRoutes();
         AxsAiSiriTestIndependentCompletions();
         AxsAiSiriTestDelegateDelivery();
+        AxsAiSiriTestBindingDiagnostics();
         NSLog(@"PASS: %lu checks", (unsigned long)AxsAiSiriChecks);
     }
     return 0;

@@ -101,11 +101,18 @@ Assert-Project ($manager -match 'state.commandPaths.count < 16') 'Command path d
 Assert-Project ($manager -match 'if \(!turn \|\| !isfinite\(time\)\) return;') 'Legacy execution must still require real turn and time.'
 Assert-Project ($manager -match '@"probe-session-ended"') 'Pending cancellation must be diagnosed.'
 Assert-Project ($manager -match 'state.generation != context.generation') 'Delegate callbacks must belong to the same request generation.'
-Assert-Project ($manager -match '\[session delegate\] != delegate') 'Only the current session delegate can establish delivery context.'
+Assert-Project ($manager -match 'id currentDelegate = \[session delegate\];' -and $manager -match 'currentDelegate != delegate') 'Only the current session delegate can establish delivery context.'
 Assert-Project ($manager -match 'AxsAiSiriIndependentCompletion\(arguments\[1\]\)') 'Do not reuse the native completion.'
 Assert-Project ($manager -match 'siriSessionDidReceiveAddViewsCommand:command completion:deliveryCompletion') 'Use the observed addViews delegate route.'
 Assert-Project ($manager -match 'context.session = session') 'Native received commands must carry weak session provenance.'
 Assert-Project ($manager -notmatch 'mach_absolute_time\(\)|state.turn = NSUUID') 'Do not fabricate turn metadata for delegate delivery.'
+Assert-Project ($manager -match 'self.bindingDiagnosticKeys.count >= 32') 'Binding diagnostics must have a bounded deduplication set.'
+Assert-Project ($manager -match '\[self.bindingDiagnosticKeys removeAllObjects\]') 'Preference changes must reset binding diagnostic deduplication.'
+foreach ($reason in @('command-linked', 'command-context-missing', 'session-released', 'delegate-mismatch',
+    'session-inactive', 'generation-mismatch', 'completion-unsupported', 'metadata-exception', 'context-ready')) {
+    Assert-Project ($manager.Contains('@"' + $reason + '"')) "Missing binding diagnostic reason: $reason"
+}
+Assert-Project ($manager -notmatch '%p|pointerValue') 'Binding diagnostics must not expose object addresses.'
 
 $sources = @(
     'Hooks/AxsAiSiriSessionHooks.xm',

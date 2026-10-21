@@ -111,6 +111,7 @@ Windows 可先运行工程静态检查：
 | `delegate-inventory` | delegate 类名、协议候选方法、类型编码及是否安装监听 |
 | `delegate-dispatch` | 本轮经过 `_performBlockWithDelegate:`，不包装或调用其 block |
 | `delegate-command-path` | 实际 delegate 回调、参数类名及是否含 `SAUIAddViews` |
+| `delegate-binding` | 绑定与投递检查的 `stage`、`reason`，只记录状态和类名 |
 | `final-recognition` | 已收到可读取的最终结果，记录长度和前缀是否匹配 |
 | `unsupported-recognition` | 实际对象既不提供直接转写，也不提供 ACE recognition 入口 |
 | `invalid-transcript` | 转写为空、ACE 结构不完整或超过长度限制 |
@@ -129,7 +130,7 @@ Windows 可先运行工程静态检查：
 子系统为 `com.axs.aisiri`；面板无法读取统一日志，需用设备日志工具查看。
 日志文件可能保留上次启动的信息，反馈时注意时间与 PID。
 
-delegate 投递修复版的复制标题为 `delegate-delivery-v5`。更新后保持现有前缀，
+delegate 绑定诊断版的复制标题为 `delegate-binding-v6`。更新后保持现有前缀，
 重新唤起 Siri 并测试一次，等待至少 10 秒再复制诊断。
 `native-command-path` 的 `path` 区分 `received-command`、`public-execute`、
 `internal-execute` 和 `batch-execute`；`answer-submitted.contextSource`
@@ -144,6 +145,22 @@ delegate 投递修复版的复制标题为 `delegate-delivery-v5`。更新后保
 清单与回调摘要按设置周期去重，仍受 120 条日志总上限约束。
 completion 签名通过 libclosure 的 `_Block_signature` 读取，仅接受返回 `void`、
 无参数或单个对象响应的 block；不可用或签名不符时放弃该路径。
+
+本版只补齐绑定检查诊断，不宣称已经解决真机投递失败，也不放宽投递条件。
+重点查看 `delegate-binding`：
+
+- `receive/command-linked`：已在收到的原生命令上写入并读回关联。
+- `callback/command-context-missing`：回调命令没有该关联；仅说明关联不存在，
+  不能单凭此项断定命令被复制。
+- `callback/session-released`：有关联，但其弱引用的 session 已释放。
+- `callback/delegate-mismatch`：回调接收者与当前 delegate 不是同一个对象，
+  附两者类名，不记录地址。
+- `callback/session-inactive` / `generation-mismatch`：会话结束或命令属于旧请求。
+- `callback/completion-unsupported` / `metadata-exception`：回调签名或展示参数检查失败。
+- `callback/context-ready`：绑定成功；后续 `present` / `submit` 阶段说明投递等待或失效原因。
+
+`delegate-binding` 每个设置周期最多保留 32 种阶段/原因组合，同类事件只记录首次；
+不记录命令标识、会话标识、对象地址或参数原文。更改设置后清空该去重集合。
 
 ## 已知边界
 

@@ -82,6 +82,7 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
 // Metadata-only deduplication, confined to worker.
 @property (strong) NSMutableSet<NSString *> *delegateInventoryKeys;
 @property (strong) NSMutableSet<NSString *> *delegateCallbackKeys;
+@property (strong) NSMutableSet<NSString *> *bindingDiagnosticKeys;
 @end
 
 @implementation AxsAiSiriProbeManager
@@ -101,10 +102,28 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
     dispatch_async(self.worker, ^{
         [self.delegateInventoryKeys removeAllObjects];
         [self.delegateCallbackKeys removeAllObjects];
+        [self.bindingDiagnosticKeys removeAllObjects];
     });
 }
 
 #pragma mark - Observed delegate route and diagnostics
+- (void)recordBindingStage:(NSString *)stage reason:(NSString *)reason details:(NSDictionary *)details {
+    // Adjust: snapshot every binding exit, including failures without a session.
+    // Deduplicate on worker so hook threads never read preferences or perform IO.
+    NSMutableDictionary *snapshot = [details mutableCopy] ?: [NSMutableDictionary dictionary];
+    snapshot[@"stage"] = stage;
+    snapshot[@"reason"] = reason;
+    NSDictionary *entry = [snapshot copy];
+    dispatch_async(self.worker, ^{
+        if (![AxsAiSiriConfig new].enabled) return;
+        if (!self.bindingDiagnosticKeys) self.bindingDiagnosticKeys = [NSMutableSet set];
+        NSString *key = [NSString stringWithFormat:@"%@/%@", stage, reason];
+        if ([self.bindingDiagnosticKeys containsObject:key] || self.bindingDiagnosticKeys.count >= 32) return;
+        [self.bindingDiagnosticKeys addObject:key];
+        AxsAiSiriRecord(@"delegate-binding", entry);
+    });
+}
+
 - (void)recordDelegateInventory:(NSDictionary *)details {
     if (!details) return;
     dispatch_async(self.worker, ^{
@@ -159,16 +178,41 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
     });
     // Adjust: the confirmed XPC addViews route has no turn/timestamp arguments.
     // Bind it only through a native command already received by this exact session.
-    if (!NSThread.isMainThread || !hasViews ||
-        ![selector isEqualToString:@"siriSessionDidReceiveAddViewsCommand:completion:"] ||
-        arguments.count != 2) return;
+    if (![selector isEqualToString:@"siriSessionDidReceiveAddViewsCommand:completion:"]) return;
+    if (!NSThread.isMainThread) {
+        [self recordBindingStage:@"callback" reason:@"not-main-thread" details:nil];
+        return;
+    }
+    if (arguments.count != 2) {
+        [self recordBindingStage:@"callback" reason:@"argument-count" details:@{@"count": @(arguments.count)}];
+        return;
+    }
     id command = arguments.firstObject;
-    if (![command isKindOfClass:viewsClass]) return;
+    if (!hasViews || ![command isKindOfClass:viewsClass]) {
+        [self recordBindingStage:@"callback" reason:@"not-add-views" details:nil];
+        return;
+    }
     AxsAiSiriNativeCommandContext *context = objc_getAssociatedObject(command, &AxsAiSiriNativeCommandContextKey);
+    if (!context) {
+        [self recordBindingStage:@"callback" reason:@"command-context-missing" details:nil];
+        return;
+    }
     AFUISiriSession *session = context.session;
-    if (!session || [session delegate] != delegate) return;
+    if (!session) {
+        [self recordBindingStage:@"callback" reason:@"session-released" details:nil];
+        return;
+    }
+    id currentDelegate = [session delegate];
+    if (currentDelegate != delegate) {
+        [self recordBindingStage:@"callback" reason:@"delegate-mismatch" details:@{
+            @"currentDelegateClass": currentDelegate ? NSStringFromClass(object_getClass(currentDelegate)) : @"nil",
+            @"callbackDelegateClass": NSStringFromClass(object_getClass(delegate))
+        }];
+        return;
+    }
     id completion = AxsAiSiriIndependentCompletion(arguments[1]);
     if (!completion) {
+        [self recordBindingStage:@"callback" reason:@"completion-unsupported" details:nil];
         dispatch_async(self.worker, ^{
             if ([AxsAiSiriConfig new].enabled) AxsAiSiriRecord(@"delegate-completion-unsupported", @{});
         });
@@ -176,18 +220,28 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
     }
     @synchronized (session) {
         AxsAiSiriProbeState *state = AxsAiSiriState(session);
-        if (!state.active || state.generation != context.generation || state.published) return;
-        if (!AxsAiSiriCopyPresentationMetadata(command, state, @"delegate-add-views")) return;
+        if (!state.active || state.generation != context.generation || state.published) {
+            NSString *reason = !state.active ? @"session-inactive" :
+                (state.generation != context.generation ? @"generation-mismatch" : @"already-published");
+            [self recordBindingStage:@"callback" reason:reason details:nil];
+            return;
+        }
+        if (!AxsAiSiriCopyPresentationMetadata(command, state, @"delegate-add-views")) {
+            [self recordBindingStage:@"callback" reason:@"metadata-exception" details:nil];
+            return;
+        }
         state.presentationDelegate = delegate;
         state.deliveryCompletion = completion;
         state.contextReady = YES;
         state.contextSource = @"delegate-add-views";
+        [self recordBindingStage:@"callback" reason:@"context-ready" details:@{@"replyPending": @(state.reply != nil)}];
     }
     __weak id weakSession = session;
     // Return through the native forwarding call before submitting our supplement.
     dispatch_async(dispatch_get_main_queue(), ^{
         id target = weakSession;
         if (target) [self tryPresentForSession:target];
+        else [self recordBindingStage:@"scheduled" reason:@"session-released" details:nil];
     });
 }
 
@@ -283,10 +337,16 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
             BOOL speak = config.speakReply;
             dispatch_async(dispatch_get_main_queue(), ^{
                 id target = weakSession;
-                if (!target) return;
+                if (!target) {
+                    [self recordBindingStage:@"reply" reason:@"session-released" details:nil];
+                    return;
+                }
                 @synchronized (target) {
                     AxsAiSiriProbeState *state = AxsAiSiriState(target);
-                    if (!state.active || state.generation != generation) return;
+                    if (!state.active || state.generation != generation) {
+                        [self recordBindingStage:@"reply" reason:!state.active ? @"session-inactive" : @"generation-mismatch" details:nil];
+                        return;
+                    }
                     state.reply = reply;
                     state.speak = speak;
                     state.preferenceEpoch = epoch;
@@ -327,7 +387,11 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
     BOOL isViews = addViewsClass && [command isKindOfClass:addViewsClass];
     @synchronized (session) {
         AxsAiSiriProbeState *state = AxsAiSiriState(session);
-        if (!state.active) return;
+        if (!state.active) {
+            if (isViews && [source isEqualToString:@"received-command"])
+                [self recordBindingStage:@"receive" reason:@"session-inactive" details:nil];
+            return;
+        }
         // Bounded path/class summaries identify alternate routes, never payloads.
         if (!state.commandPaths) state.commandPaths = [NSMutableSet set];
         NSString *className = NSStringFromClass([command class]);
@@ -351,6 +415,9 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
             context.session = session;
             context.generation = state.generation;
             objc_setAssociatedObject(command, &AxsAiSiriNativeCommandContextKey, context, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            BOOL linked = objc_getAssociatedObject(command, &AxsAiSiriNativeCommandContextKey) == context;
+            [self recordBindingStage:@"receive" reason:linked ? @"command-linked" : @"association-failed"
+                details:@{@"finalSeen": @(state.finalSeen)}];
         }
         state.nativeTurnAvailable |= turn != nil;
         state.nativeTimeValid |= isfinite(time);
@@ -382,10 +449,16 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
     id deliveryCompletion;
     @synchronized (session) {
         AxsAiSiriProbeState *state = AxsAiSiriState(session);
-        if (!state.active || !state.reply || !state.contextReady || state.published) return;
+        if (!state.active || !state.reply || !state.contextReady || state.published) {
+            NSString *reason = !state.active ? @"session-inactive" : (state.published ? @"already-published" :
+                (!state.reply ? @"reply-not-ready" : @"context-not-ready"));
+            [self recordBindingStage:@"present" reason:reason details:nil];
+            return;
+        }
         @synchronized (self) {
             if (state.preferenceEpoch != self.epoch) {
                 state.reply = nil;
+                [self recordBindingStage:@"present" reason:@"preferences-changed" details:nil];
                 return;
             }
         }
@@ -400,6 +473,11 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
                 ![presentationDelegate respondsToSelector:@selector(siriSessionDidReceiveAddViewsCommand:completion:)])) ||
             (!delegateRoute && ![session respondsToSelector:@selector(performAceCommand:turnIdentifier:machAbsoluteTime:)])) {
             state.reply = nil;
+            [self recordBindingStage:@"present" reason:@"presentation-unavailable" details:@{
+                @"delegateRoute": @(delegateRoute), @"delegateAlive": @(presentationDelegate != nil),
+                @"delegateMatches": @([session delegate] == presentationDelegate),
+                @"completionReady": @(deliveryCompletion != nil)
+            }];
             AxsAiSiriRecord(@"presentation-unavailable", @{});
             return;
         }
@@ -439,13 +517,24 @@ static BOOL AxsAiSiriCopyPresentationMetadata(SAUIAddViews *views, AxsAiSiriProb
     if (!command) return;
     @synchronized (session) {
         AxsAiSiriProbeState *state = AxsAiSiriState(session);
-        if (!state.active || state.generation != generation) return;
+        if (!state.active || state.generation != generation) {
+            [self recordBindingStage:@"submit" reason:!state.active ? @"session-inactive" : @"generation-mismatch" details:nil];
+            return;
+        }
     }
-    @synchronized (self) { if (epoch != self.epoch) return; }
+    @synchronized (self) {
+        if (epoch != self.epoch) {
+            [self recordBindingStage:@"submit" reason:@"preferences-changed" details:nil];
+            return;
+        }
+    }
     // Do not hold our monitor across system code or delegate callbacks.
     @try {
         if (presentationDelegate) {
-            if ([session delegate] != presentationDelegate) return;
+            if ([session delegate] != presentationDelegate) {
+                [self recordBindingStage:@"submit" reason:@"delegate-mismatch" details:nil];
+                return;
+            }
             // The signature-checked reply block owns no session or native completion.
             // Acknowledgements are not proof of UI rendering.
             [presentationDelegate siriSessionDidReceiveAddViewsCommand:command completion:deliveryCompletion];
